@@ -1,0 +1,15 @@
+TextFSM Ruby
+
+This project is a Ruby port of the parsing engine and CLI template selection
+from Google TextFSM (https://github.com/google/textfsm).
+
+Original TextFSM: Copyright 2010 Google Inc. All Rights Reserved.
+Original CLI tables: Copyright 2022 Google Inc. All Rights Reserved.
+Licensed under the Apache License, Version 2.0 (see LICENSE).
+
+Reference: TextFSM 2.1.0, commit f80bbb459c55ff5f21651e48d2529722d667af97.
+The Ruby source is a reimplementation, modified in 2026.
+Files in examples/ and test/fixtures/upstream/ are copied from that reference.
+test/fixtures/python_conformance.json contains results generated from the
+upstream parser tests and examples. The generator is in script/.
+

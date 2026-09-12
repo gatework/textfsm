@@ -1,0 +1,28 @@
+# Bundler and generated artifacts
+/.bundle/
+/vendor/
+/pkg/
+/*.gem
+/coverage/
+/.yardoc/
+/doc/
+/tmp/
+/log/
+/.rubocop_cache/
+/.ruby-lsp/
+
+# Local credentials and environment overrides
+/.gem/
+/.gemrc
+/.env
+/.env.*
+!/.env.example
+!/.env.sample
+/gem-private_key.pem
+
+# Editor, OS and Python cache files
+__pycache__/
+*.py[cod]
+*.swp
+*.swo
+.DS_Store
