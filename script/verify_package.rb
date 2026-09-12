@@ -22,6 +22,17 @@ def run!(environment, *command, **options)
   output
 end
 
+def verify_isolation!(environment, directory, root)
+  probe = <<~RUBY
+    require "textfsm"
+    abort "Bundler leaked into the installed environment" if defined?(Bundler)
+    unless File.realpath(Gem.loaded_specs.fetch("textfsm").full_gem_path) == File.realpath(ARGV.fetch(0))
+      abort "Loaded gem differs from the installed package"
+    end
+  RUBY
+  run!(environment, RbConfig.ruby, "-e", probe, root, chdir: directory)
+end
+
 def verify_usage!(environment, executable, template, header)
   help = run!(environment, executable, "--help")
   raise "Installed help is missing usage" unless help.start_with?("Usage: textfsm")
@@ -61,11 +72,15 @@ Dir.mktmpdir("textfsm-install-") do |directory|
     "GEM_PATH" => ([directory] + Gem.path).join(File::PATH_SEPARATOR),
     "RUBYOPT" => nil,
     "RUBYLIB" => nil,
-    "BUNDLE_GEMFILE" => nil
+    "BUNDLE_GEMFILE" => nil,
+    # RubyGems can activate Bundler independently of RUBYOPT.
+    "BUNDLER_SETUP" => nil,
+    "RUBYGEMS_GEMDEPS" => nil
   }
   run!(environment, RbConfig.ruby, "-S", "gem", "install", package_path,
        "--local", "--ignore-dependencies", "--no-document", "--install-dir", directory)
   root = File.join(directory, "gems", package.spec.full_name)
+  verify_isolation!(environment, directory, root)
   expected_files.each do |file|
     unless File.binread(File.join(root, file)) == File.binread(File.join(source_root, file))
       raise "Installed file differs from source: #{file}"
