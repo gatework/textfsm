@@ -74,6 +74,8 @@ class ReleaseTest < Minitest::Test
       end
     RUBY
     git("init", "-q", "-b", "main")
+    # Keep background maintenance from outliving the disposable repository.
+    git("config", "maintenance.auto", "false")
   end
 
   def teardown
