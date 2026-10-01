@@ -2,6 +2,7 @@
 # frozen_string_literal: true
 
 require "json"
+require "fileutils"
 require "open3"
 require "rbconfig"
 require "rubygems/package"
@@ -22,25 +23,47 @@ def run!(environment, *command, **options)
   output
 end
 
+def runtime_packages(spec, packages = {})
+  spec.runtime_dependencies.each do |dependency|
+    resolved = dependency.to_spec
+    next if packages.key?(resolved.full_name)
+
+    packages[resolved.full_name] = nil
+    runtime_packages(resolved, packages)
+    next if resolved.default_gem?
+
+    raise "Missing cached runtime dependency: #{resolved.full_name}; run bundle install first" unless File.file?(resolved.cache_file)
+
+    packages[resolved.full_name] = resolved.cache_file
+  end
+  packages.values.compact
+end
+
 def verify_isolation!(environment, directory, root)
-  probe = <<~RUBY
+  probe = <<~'RUBY'
     require "textfsm"
     abort "Bundler leaked into the installed environment" if defined?(Bundler)
     unless File.realpath(Gem.loaded_specs.fetch("textfsm").full_gem_path) == File.realpath(ARGV.fetch(0))
       abort "Loaded gem differs from the installed package"
     end
+    Gem.loaded_specs.each_value do |spec|
+      next if spec.default_gem? || File.realpath(spec.base_dir) == File.realpath(ARGV.fetch(1))
+
+      abort "Gem escaped the installed environment: #{spec.full_name}"
+    end
   RUBY
-  run!(environment, RbConfig.ruby, "-e", probe, root, chdir: directory)
+  run!(environment, RbConfig.ruby, "-e", probe, root, directory, chdir: directory)
 end
 
 def verify_usage!(environment, executable, template, header)
-  help = run!(environment, executable, "--help")
+  directory = environment.fetch("GEM_HOME")
+  help = run!(environment, executable, "--help", chdir: directory)
   raise "Installed help is missing usage" unless help.start_with?("Usage: textfsm")
 
-  validation = run!(environment, executable, "--validate", template)
+  validation = run!(environment, executable, "--validate", template, chdir: directory)
   raise "Installed validation differs" unless validation.strip == "Template OK: #{header.join(', ')}"
 
-  output, error, status = Open3.capture3(environment, executable, "--unknown")
+  output, error, status = Open3.capture3(environment, executable, "--unknown", chdir: directory)
   raise "CLI error contract differs" unless status.exitstatus == 2 && output.empty? && error.start_with?("textfsm:")
 end
 
@@ -60,25 +83,25 @@ def verify_cli!(environment, directory, root)
 
   verify_usage!(environment, executable, template, rows.fetch("header"))
 
-  table = run!(environment, executable, "--format", "table", template, input)
+  table = run!(environment, executable, "--format", "table", template, input, chdir: directory)
   return if table.lines.first&.chomp&.split("\t") == rows.fetch("header") && table.include?("WS-C4948-10GE")
 
   raise "Installed table output differs"
 end
 
 Dir.mktmpdir("textfsm-install-") do |directory|
-  environment = {
+  environment = ENV.keys.grep(/\ABUNDLE/).to_h { |name| [name, nil] }.merge(
     "GEM_HOME" => directory,
-    "GEM_PATH" => ([directory] + Gem.path).join(File::PATH_SEPARATOR),
+    "GEM_PATH" => directory,
     "RUBYOPT" => nil,
     "RUBYLIB" => nil,
-    "BUNDLE_GEMFILE" => nil,
     # RubyGems can activate Bundler independently of RUBYOPT.
     "BUNDLER_SETUP" => nil,
     "RUBYGEMS_GEMDEPS" => nil
-  }
+  )
+  runtime_packages(package.spec).each { |path| FileUtils.cp(path, directory) }
   run!(environment, RbConfig.ruby, "-S", "gem", "install", package_path,
-       "--local", "--ignore-dependencies", "--no-document", "--install-dir", directory)
+       "--norc", "--local", "--no-document", "--install-dir", directory, chdir: directory)
   root = File.join(directory, "gems", package.spec.full_name)
   verify_isolation!(environment, directory, root)
   expected_files.each do |file|
@@ -93,7 +116,8 @@ Dir.mktmpdir("textfsm-install-") do |directory|
 
   verify_cli!(environment, directory, root)
   executable = File.join(directory, "bin", "textfsm")
-  raise "Installed version differs" unless run!(environment, executable, "--version").strip == package.spec.version.to_s
+  version = run!(environment, executable, "--version", chdir: directory).strip
+  raise "Installed version differs" unless version == package.spec.version.to_s
 
   puts "Verified #{package.spec.full_name}: #{package.contents.size} files match source, isolated requires, CLI formats/stdin/errors."
 end

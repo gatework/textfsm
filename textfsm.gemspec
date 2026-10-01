@@ -13,12 +13,20 @@ Gem::Specification.new do |spec|
   spec.homepage = "https://github.com/gatework/textfsm"
   spec.metadata["source_code_uri"] = spec.homepage
   spec.metadata["bug_tracker_uri"] = "#{spec.homepage}/issues"
+  spec.metadata["documentation_uri"] = "#{spec.homepage}/blob/main/README.md"
+  spec.metadata["changelog_uri"] = "#{spec.homepage}/blob/main/CHANGELOG.md"
+  spec.metadata["rubygems_mfa_required"] = "true"
   spec.metadata["allowed_push_host"] = "https://rubygems.org"
   spec.required_ruby_version = ">= 3.1"
-  spec.files = Dir["lib/**/*.rb", "exe/*", "examples/*", "README.md", "LICENSE", "NOTICE"]
+  spec.files = Dir[
+    "lib/**/*.rb", "exe/textfsm", "examples/*_template", "examples/*_example", "examples/index",
+    "README.md", "CHANGELOG.md", "LICENSE", "NOTICE"
+  ].sort
   spec.bindir = "exe"
   spec.executables = ["textfsm"]
   spec.require_paths = ["lib"]
-  spec.add_dependency "json", "~> 2.0"
-  spec.add_dependency "strscan", "~> 3.0"
+  # 显式声明库与 CLI 使用的标准库 gem，供 Bundler 解析完整运行时依赖。
+  spec.add_dependency "json", ">= 2.0"
+  spec.add_dependency "optparse", ">= 0.1"
+  spec.add_dependency "strscan", ">= 3.0"
 end

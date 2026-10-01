@@ -58,6 +58,30 @@ class TableTest < Minitest::Test
     assert_equal [["2"], ["1"]], table.rows
   end
 
+  def test_composite_key_merge_preserves_snapshots_and_nested_values
+    left = TextFSM::Table.new(%w[ID TAGS], [["a", ["one"]], ["a", ["two"]], ["missing", []]])
+    right_rows = [
+      [["two"], "a", [{ "name" => "second" }]],
+      [["one"], "a", [{ "name" => "first" }]],
+      [["one"], "a", [{ "name" => "duplicate" }]]
+    ]
+    right = TextFSM::Table.new(%w[TAGS ID DATA], right_rows)
+    snapshot = left.rows
+    left.merge!(right, keys: %w[ID TAGS])
+
+    assert_equal [["a", ["one"]], ["a", ["two"]], ["missing", []]], snapshot
+    assert_equal [["a", ["one"], [{ "name" => "first" }]],
+                  ["a", ["two"], [{ "name" => "second" }]],
+                  ["missing", [], ""]], left.rows
+    assert_raises(FrozenError) { left.rows[0][1] << "changed" }
+    assert_raises(FrozenError) { left.rows[0][2][0]["name"].replace("changed") }
+    assert_raises(FrozenError) { left.rows[2][2].replace("changed") }
+    left.to_hashes[0]["TAGS"] << "changed"
+    left.to_a[0][2][0]["name"].replace("changed")
+    assert_equal ["one"], left.rows[0][1]
+    assert_equal "first", left.rows[0][2][0]["name"]
+  end
+
   def test_enumeration_and_indexing_expose_immutable_rows
     table = TextFSM::Table.new(["X"], [["a"]])
     assert_equal 1, table.each.size

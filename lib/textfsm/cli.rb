@@ -36,7 +36,7 @@ module TextFSM
       rows = parser.parse(text)
       write_result(parser.header, rows, settings)
       0
-    rescue Error, OptionParser::ParseError, SystemCallError, IOError, ArgumentError => e
+    rescue Error, OptionParser::ParseError, SystemCallError, IOError, ArgumentError, EncodingError => e
       @error.puts("textfsm: #{e.message}")
       2
     end

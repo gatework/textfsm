@@ -30,7 +30,7 @@ module TextFSM
     end
 
     def parse(text, attributes: {}, templates: nil)
-      names = template_names(templates || find_templates(attributes))
+      names = template_names(templates.nil? ? find_templates(attributes) : templates)
       text = text.read if text.respond_to?(:read)
       raise ArgumentError, "text must be a String or readable IO" unless text.is_a?(String)
 

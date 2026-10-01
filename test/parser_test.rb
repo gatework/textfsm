@@ -278,6 +278,32 @@ class ParserTest < Minitest::Test
     assert_equal([1, 2], parser.parse("id 2\n", eof: false).map { |row| row.first["records"] })
   end
 
+  def test_fillup_preserves_nested_snapshots_across_chunks_and_record_callbacks
+    template = <<~'FSM'
+      Value CountRecords,Fillup LABEL (\w+)
+      Value Required ID (\d+)
+
+      Start
+        ^label ${LABEL}
+        ^id ${ID} -> Record
+    FSM
+    parser = TextFSM::Parser.new(template, options: { CountRecords: CountRecords })
+    empty_snapshot = parser.parse("id 1\n", eof: false)
+    first_snapshot = parser.parse("label Alpha\nid 2\nid 3\n", eof: false)
+    latest_snapshot = parser.parse("label Beta\nid 4\n", eof: false)
+
+    assert_equal [["", "1"]], empty_snapshot
+    assert_equal [[{ "label" => "Alpha", "records" => 0 }, "1"],
+                  [{ "label" => "Alpha", "records" => 1 }, "2"], ["", "3"]], first_snapshot
+    assert_equal first_snapshot.first(2) + [[{ "label" => "Beta", "records" => 0 }, "3"],
+                                            [{ "label" => "Beta", "records" => 1 }, "4"]], latest_snapshot
+    assert_raises(FrozenError) { latest_snapshot[2][0]["label"].replace("changed") }
+    parser.to_a[2][0]["label"].replace("changed")
+    assert_equal "Beta", parser.rows[2][0]["label"]
+    parser.reset
+    assert_equal "Beta", latest_snapshot[2][0]["label"]
+  end
+
   def test_empty_visible_records_still_clear_hidden_fields
     template = <<~'FSM'
       Value Hidden,Required H (\w+)

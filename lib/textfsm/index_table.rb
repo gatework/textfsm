@@ -46,9 +46,10 @@ module TextFSM
 
     # Empty cells are wildcards. Attributes absent from the index are ignored.
     def match(attributes)
+      attributes = attributes.map { |key, value| [key.to_s, value] }
       index = @patterns.index do |patterns|
         attributes.all? do |key, value|
-          pattern = patterns[key.to_s]
+          pattern = patterns[key]
           pattern.nil? || pattern.match?(value.to_s)
         end
       end

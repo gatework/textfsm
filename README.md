@@ -2,13 +2,25 @@
 
 使用 Ruby 实现的模板驱动文本解析状态机。读取 TextFSM 模板和半结构化文本，输出二维数组或 Hash 数组，适合解析网络设备 CLI 输出、系统命令输出等。
 
-解析语义参考 [Google TextFSM 2.1.0](https://github.com/google/textfsm/tree/f80bbb459c55ff5f21651e48d2529722d667af97)，运行时使用 Ruby 自身的正则引擎，不需要 Python 或外部进程；运行时依赖 Ruby 标准库 gem `json` 和 `strscan`。要求 Ruby 3.1 或以上。
+解析语义参考 [Google TextFSM 2.1.0](https://github.com/google/textfsm/tree/f80bbb459c55ff5f21651e48d2529722d667af97)，运行时使用 Ruby 自身的正则引擎，不需要 Python 或外部进程；运行时依赖 Ruby 标准库 gem `json`、`optparse` 和 `strscan`。要求 Ruby 3.1 或以上。
 
 0.2 使用 `TextFSM` 模块组织 `Parser`、`Field`、`Rule`、`Table` 和 `CliTable`；公开方法与选项扩展接口按 Ruby 风格重新设计，不保留 0.1 的接口别名。
 
 ## 安装
 
-本项目尚未发布到 RubyGems。在其他项目的 `Gemfile` 中使用本地路径：
+在项目的 `Gemfile` 中添加：
+
+```ruby
+gem "textfsm"
+```
+
+然后运行 `bundle install`。也可以直接安装命令行工具：
+
+```sh
+gem install textfsm
+```
+
+开发时可使用本地路径：
 
 ```ruby
 gem "textfsm", path: "/path/to/textfsm"
@@ -19,7 +31,7 @@ gem "textfsm", path: "/path/to/textfsm"
 ```sh
 bundle install
 bundle exec rake build
-gem install ./pkg/textfsm-0.2.0.gem
+gem install ./pkg/textfsm-0.2.1.gem
 ```
 
 源码仓库：[gatework/textfsm](https://github.com/gatework/textfsm)。
@@ -214,7 +226,7 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 ## 工程约定
 
 - `lib/textfsm.rb` 是统一入口，各组件也可单独 `require "textfsm/parser"`、`require "textfsm/pattern"` 等。CLI 位于 `exe/textfsm`。
-- `exe/` 遵循 Bundler 的 gem 可执行文件约定，存放安装给使用者的命令；`script/` 存放项目维护脚本。`Gemfile.lock` 纳入 Git，固定开发和发布验证使用的依赖，不会打进 gem；使用者的依赖范围由 gemspec 声明。
+- `exe/` 遵循 Bundler 的 gem 可执行文件约定，存放安装给使用者的命令；`script/` 存放项目维护脚本。`Gemfile.lock` 纳入 Git，固定开发和发布验证使用的依赖，不会打进 gem；gemspec 中的运行时依赖仅声明最低版本，不限制主版本。
 - 类和模块使用 `CamelCase`，方法、参数和实例变量使用 `snake_case`；查询使用 `?`，属性赋值使用 `=`。类方法写成 `def self.method_name`，解析状态属于实例，固定映射使用冻结常量。
 - 集合通过 `Enumerable`、`each`、`[]`、`size` 和 `empty?` 提供 Ruby 接口；需要代码块的迭代方法在未传块时返回 `Enumerator`。`merge`／`merge!` 区分创建新表和修改当前表，排序复用 Ruby 比较器。
 - 数据转换使用 `map`、`filter_map`、`transform_values`、`reduce` 等集合方法；简单转换使用单行 `{ ... }`，多行逻辑和有副作用的迭代使用 `do ... end`。简短取值使用条件表达式，复杂状态分支使用 `if`／`case`。
@@ -222,7 +234,7 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 - 内部动作使用 Symbol，省略目标状态使用 `nil`；模板文本继续使用标准的 `Next`、`Record`、`Clearall` 等语法。
 - 正则编译使用 `StringScanner`，编译器的游标和分组栈不保留在最终 `Pattern` 对象中。模式始终从输入开头匹配。
 - `bundle exec rake` 执行 Minitest 和 RuboCop；`rake test`、`rake lint` 可分别运行。代码规则见 `.rubocop.yml`。
-- `bundle exec rake verify` 进一步构建 gem，在临时目录安装后逐文件核对源码内容，并验证独立加载与 CLI 输出、标准输入和退出码。生成的包位于 `pkg/`，不会发布到 RubyGems。
+- `bundle exec rake verify` 进一步构建 gem，从 `bundle install` 准备的本地缓存离线安装运行时依赖和候选包；安装环境仅使用临时目录的 gem 与 Ruby 自带的默认 gem。逐文件核对源码内容，并验证独立加载与 CLI 输出、标准输入和退出码，避免开发依赖掩盖缺失的运行时依赖。生成的包位于 `pkg/`，不会发布到 RubyGems。
 
 ## 发布到 RubyGems
 
@@ -236,7 +248,7 @@ bundle exec rake release:check
 
 检查模式可以在尚未提交的工作区运行，不访问 RubyGems，也不会创建提交或标签。正式发布需要工作区干净，所有入包文件已提交到 Git：
 
-1. 修改 `lib/textfsm/version.rb` 中的版本号。新版本使用 RubyGems 版本格式，例如 `0.2.1` 或 `0.3.0.pre.1`。
+1. 修改 `lib/textfsm/version.rb` 中的版本号。新版本使用 RubyGems 版本格式，例如 `0.2.2` 或 `0.3.0.pre.1`。
 2. 运行 `bundle install` 更新 `Gemfile.lock`，再运行 `bundle exec rake release:check`。
 3. 提交并推送本次版本的源码与锁文件。
 4. 使用自己的 RubyGems 账号发布：
@@ -247,15 +259,15 @@ bundle exec rake release
 # 等价于 bundle exec ruby script/release.rb --push
 ```
 
-凭据由 RubyGems 管理；自动化环境可通过密钥管理服务注入 `GEM_HOST_API_KEY`，密钥需有 `push_rubygem` 权限。需要 MFA 时由 `gem push` 处理交互。不要把密钥放进仓库或发布脚本。详见 [RubyGems 发布指南](https://guides.rubygems.org/publishing/)和 [API key scopes](https://guides.rubygems.org/api-key-scopes/)。
+凭据由 RubyGems 管理；自动化环境可通过密钥管理服务注入 `GEM_HOST_API_KEY`，密钥需有 `push_rubygem` 权限。gemspec 声明 `rubygems_mfa_required: true`，发布者需在 RubyGems 账号启用 MFA；需要验证时由 `gem push` 处理交互。不要把密钥放进仓库或发布脚本。详见 [RubyGems 发布指南](https://guides.rubygems.org/publishing/)和 [API key scopes](https://guides.rubygems.org/api-key-scopes/)。
 
 正式发布复用 `rake verify` 的完整检查：执行测试、RuboCop 和构建，再将 gem 复制到独立临时目录，由 `script/verify_package.rb` 验证安装后的库、CLI 和文件内容。候选包在验证前后必须保持同一 SHA256，HEAD 和工作区也必须保持不变，随后上传该候选包到 `https://rubygems.org`，读取版本元数据核对 SHA256。输出包含源码提交号和包校验值；相同版本、相同校验值已发布时直接成功，相同版本内容不同时拒绝覆盖。构建使用提交时间作为 `SOURCE_DATE_EPOCH`，便于同一提交重复构建。
 
 上传后只重试查询，不自动重复上传。若提示结果未确认，先检查 RubyGems 上该版本及其校验值。脚本不创建或推送 Git 提交和标签；RubyGems 核对成功后，可按已发布版本标记源码，例如：
 
 ```sh
-git tag -a v0.2.0 -m "Release v0.2.0"
-git push origin v0.2.0
+git tag -a v0.2.1 -m "Release v0.2.1"
+git push origin v0.2.1
 ```
 
 ## 兼容范围与验证

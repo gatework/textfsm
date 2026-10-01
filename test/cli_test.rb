@@ -72,6 +72,18 @@ class CLITest < Minitest::Test
     end
   end
 
+  def test_incompatible_input_encoding_reports_an_error_without_a_backtrace
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "template")
+      File.write(path, "Value X (.*)\n\nStart\n  ^${X} -> Record\n")
+      status, output, error = run_cli(path, stdin: "\xFF\n".b)
+      assert_equal 2, status
+      assert_empty output
+      assert_match(/\Atextfsm: /, error)
+      refute_includes error, "from "
+    end
+  end
+
   def test_validation_help_and_version_do_not_read_input_or_change_arguments
     input = Object.new
     def input.read

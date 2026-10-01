@@ -153,7 +153,7 @@ class CliTableTest < Minitest::Test
   def test_template_types_are_validated_without_overwriting_rows
     @table.parse(INPUT, templates: "clitable_templateB")
     before = @table.rows
-    [1, {}, [nil], [1]].each do |templates|
+    [false, 1, {}, [nil], [1]].each do |templates|
       assert_raises(ArgumentError) do
         @table.parse(INPUT, templates: templates)
       end

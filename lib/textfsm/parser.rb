@@ -38,7 +38,7 @@ module TextFSM
     end
 
     def rows
-      Data.copy(@rows, immutable: true)
+      @rows.dup.freeze
     end
 
     def to_a
@@ -80,11 +80,15 @@ module TextFSM
       column = @output_fields.index(field)
       return unless column
 
-      @rows.reverse_each do |row|
+      (@rows.length - 1).downto(0) do |index|
+        row = @rows[index]
         value = row[column]
         break if value && !(value.respond_to?(:empty?) && value.empty?)
 
-        row[column] = Data.copy(field.value)
+        # Records are immutable so earlier snapshots can safely share them.
+        replacement = row.dup
+        replacement[column] = Data.copy(field.value, immutable: true)
+        @rows[index] = replacement.freeze
       end
     end
 
@@ -224,7 +228,7 @@ module TextFSM
         @fields.each_value(&:prepare_record)
         record = @output_fields.map(&:value)
         unless record.all? { |value| value.nil? || value == [] }
-          @rows << Data.copy(record.map { |value| value.nil? ? "" : value })
+          @rows << record.map! { |value| Data.copy(value.nil? ? "" : value, immutable: true) }.freeze
         end
       end
       @fields.each_value(&:clear)

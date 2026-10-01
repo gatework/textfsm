@@ -59,10 +59,6 @@ Layout/LineLength:
   Max: 140
   AllowedPatterns: ["\\A\\s*#", "raise .*Error"]
 
-# Registry account policy is configured when publishing, not by this library.
-Gemspec/RequireMFA:
-  Enabled: false
-
 # StringScanner 3.0 requires Regexp arguments even for single characters.
 Style/RedundantRegexpArgument:
   Exclude: ["lib/textfsm/pattern.rb"]

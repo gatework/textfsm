@@ -93,4 +93,19 @@ class IndexTableTest < Minitest::Test
       assert_equal "a", index.match(Command: "show # detail").fetch("Template")
     end
   end
+
+  def test_symbol_and_string_attributes_are_each_matched_without_coercing_unknown_values
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,VendorA\\Z\nsecond,VendorB\\Z\n")
+      index = TextFSM::IndexTable.new(path)
+      unknown = Object.new
+      def unknown.to_s
+        raise "Ignored attributes must not be converted"
+      end
+
+      assert_equal "first", index.match(Vendor: "VendorA", Unknown: unknown).fetch("Template")
+      assert_nil index.match({ Vendor: "VendorA", "Vendor" => "VendorB" })
+    end
+  end
 end

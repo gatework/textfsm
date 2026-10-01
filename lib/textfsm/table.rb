@@ -72,12 +72,13 @@ module TextFSM
       end
       rows = @rows.each_with_index.map do |row, index|
         right = keys.empty? ? other[index] : lookup[row.values_at(*left_keys)]
-        row + (right ? right.values_at(*right_columns) : Array.new(columns.size, ""))
+        extra = right ? Data.copy(right.values_at(*right_columns), immutable: true) : Array.new(columns.size, "")
+        # Existing cells are immutable; only incoming values need an owned copy.
+        (row + extra).freeze
       end
-      header = Data.copy(@header + columns, immutable: true)
-      rows = Data.copy(rows, immutable: true)
+      header = (@header + Data.copy(columns, immutable: true)).freeze
       @header = header
-      @rows = rows
+      @rows = rows.freeze
       self
     end
 
