@@ -1,6 +1,10 @@
 name: Test
 
-on: [push, pull_request]
+on:
+  push:
+  pull_request:
+  workflow_dispatch:
+  workflow_call:
 
 permissions:
   contents: read
@@ -20,3 +24,9 @@ jobs:
           ruby-version: ${{ matrix.ruby }}
           bundler-cache: true
       - run: bundle exec rake verify
+      - uses: actions/upload-artifact@v4
+        if: matrix.ruby == '4.0'
+        with:
+          name: textfsm-gem-${{ github.sha }}
+          path: pkg/*.gem
+          if-no-files-found: error

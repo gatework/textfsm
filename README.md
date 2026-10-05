@@ -31,7 +31,7 @@ gem "textfsm", path: "/path/to/textfsm"
 ```sh
 bundle install
 bundle exec rake build
-gem install ./pkg/textfsm-0.2.1.gem
+gem install ./pkg/textfsm-0.2.2.gem
 ```
 
 源码仓库：[gatework/textfsm](https://github.com/gatework/textfsm)。
@@ -52,7 +52,7 @@ template = <<~'FSM'
 FSM
 
 text = <<~TEXT
-  GigabitEthernet0/0 192.0.2.1 up up
+  GigabitEthernet0/0 192.0.2.2 up up
   GigabitEthernet0/1 unassigned administratively down down
 TEXT
 
@@ -60,12 +60,12 @@ fsm = TextFSM::Parser.new(template)
 p fsm.header
 # => ["INTERFACE", "ADDRESS", "STATUS", "PROTOCOL"]
 p fsm.parse(text)
-# => [["GigabitEthernet0/0", "192.0.2.1", "up", "up"],
+# => [["GigabitEthernet0/0", "192.0.2.2", "up", "up"],
 #     ["GigabitEthernet0/1", "unassigned", "administratively down", "down"]]
 
 fsm.reset
 p fsm.parse_hashes(text)
-# => [{"INTERFACE"=>"GigabitEthernet0/0", "ADDRESS"=>"192.0.2.1",
+# => [{"INTERFACE"=>"GigabitEthernet0/0", "ADDRESS"=>"192.0.2.2",
 #      "STATUS"=>"up", "PROTOCOL"=>"up"}, ...]
 ```
 
@@ -238,37 +238,12 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 
 ## 发布到 RubyGems
 
-发布入口是 `script/release.rb`，也可通过 Rake 运行。直接执行脚本默认只检查和构建：
+发布使用标签触发的 OIDC Trusted Publishing，不保存长期 API key。完整 Ruby CI 矩阵通过后，
+工作流验证并上传同次 CI 的 gem，再核对 RubyGems 下载和 GitHub Release 的 SHA256。
+流程、账号绑定及失败恢复见 [发布说明](docs/RELEASING.md)。
 
-```sh
-bundle install
-bundle exec rake release:check
-# 等价于 bundle exec ruby script/release.rb --dry-run
-```
-
-检查模式可以在尚未提交的工作区运行，不访问 RubyGems，也不会创建提交或标签。正式发布需要工作区干净，所有入包文件已提交到 Git：
-
-1. 修改 `lib/textfsm/version.rb` 中的版本号。新版本使用 RubyGems 版本格式，例如 `0.2.2` 或 `0.3.0.pre.1`。
-2. 运行 `bundle install` 更新 `Gemfile.lock`，再运行 `bundle exec rake release:check`。
-3. 提交并推送本次版本的源码与锁文件。
-4. 使用自己的 RubyGems 账号发布：
-
-```sh
-gem signin --host https://rubygems.org
-bundle exec rake release
-# 等价于 bundle exec ruby script/release.rb --push
-```
-
-凭据由 RubyGems 管理；自动化环境可通过密钥管理服务注入 `GEM_HOST_API_KEY`，密钥需有 `push_rubygem` 权限。gemspec 声明 `rubygems_mfa_required: true`，发布者需在 RubyGems 账号启用 MFA；需要验证时由 `gem push` 处理交互。不要把密钥放进仓库或发布脚本。详见 [RubyGems 发布指南](https://guides.rubygems.org/publishing/)和 [API key scopes](https://guides.rubygems.org/api-key-scopes/)。
-
-正式发布复用 `rake verify` 的完整检查：执行测试、RuboCop 和构建，再将 gem 复制到独立临时目录，由 `script/verify_package.rb` 验证安装后的库、CLI 和文件内容。候选包在验证前后必须保持同一 SHA256，HEAD 和工作区也必须保持不变，随后上传该候选包到 `https://rubygems.org`，读取版本元数据核对 SHA256。输出包含源码提交号和包校验值；相同版本、相同校验值已发布时直接成功，相同版本内容不同时拒绝覆盖。构建使用提交时间作为 `SOURCE_DATE_EPOCH`，便于同一提交重复构建。
-
-上传后只重试查询，不自动重复上传。若提示结果未确认，先检查 RubyGems 上该版本及其校验值。脚本不创建或推送 Git 提交和标签；RubyGems 核对成功后，可按已发布版本标记源码，例如：
-
-```sh
-git tag -a v0.2.1 -m "Release v0.2.1"
-git push origin v0.2.1
-```
+本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.2.2.gem`；
+已有产物路径不会重新构建。更新版本及 CHANGELOG、提交并确认远端 CI 后推送对应版本标签。
 
 ## 兼容范围与验证
 

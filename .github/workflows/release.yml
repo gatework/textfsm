@@ -1,0 +1,69 @@
+name: Release Gem
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: release-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+      - name: Check tag and release notes
+        run: |
+          version=$(ruby -Ilib -rtextfsm/version -e 'print TextFSM::VERSION')
+          test "${GITHUB_REF_TYPE}" = tag
+          test "${GITHUB_REF_NAME}" = "v${version}"
+          grep -Eq "^## ${version//./\.}([^0-9.]|$)" CHANGELOG.md
+
+  verify:
+    needs: validate
+    uses: ./.github/workflows/test.yml
+
+  publish:
+    needs: verify
+    runs-on: ubuntu-latest
+    environment: release
+    permissions:
+      contents: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: ruby/setup-ruby@95ef2b042f9d7a56d8268cba8559e2842e2ad01b # v1
+        with:
+          ruby-version: "4.0"
+          bundler-cache: true
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: textfsm-gem-${{ github.sha }}
+          path: pkg
+      - name: Verify the exact CI artifact
+        run: bundle exec ruby script/release.rb --dry-run --artifact "pkg/textfsm-${GITHUB_REF_NAME#v}.gem"
+      - name: Configure RubyGems Trusted Publishing
+        uses: rubygems/configure-rubygems-credentials@dc5a8d8553e6ee01fc26761a49e99e733d17954a # v2.1.0
+      - name: Publish and verify RubyGems download
+        run: bundle exec ruby script/release.rb --push --artifact "pkg/textfsm-${GITHUB_REF_NAME#v}.gem"
+      - name: Publish GitHub Release with the same artifact
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gem="pkg/textfsm-${GITHUB_REF_NAME#v}.gem"
+          (cd pkg && sha256sum "${gem#pkg/}" > SHA256SUMS)
+          if ! gh release view "$GITHUB_REF_NAME" >/dev/null 2>&1; then
+            gh release create "$GITHUB_REF_NAME" --verify-tag --title "$GITHUB_REF_NAME" --notes-file CHANGELOG.md
+          fi
+          gh release upload "$GITHUB_REF_NAME" "$gem" pkg/SHA256SUMS --clobber
+          mkdir -p "$RUNNER_TEMP/release-readback"
+          gh release download "$GITHUB_REF_NAME" --dir "$RUNNER_TEMP/release-readback"
+          cmp "$gem" "$RUNNER_TEMP/release-readback/${gem#pkg/}"

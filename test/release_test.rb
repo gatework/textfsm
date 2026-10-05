@@ -51,6 +51,9 @@ class ReleaseTest < Minitest::Test
       push_result
     end
 
+    def confirm_download!(_spec, _checksum)
+    end
+
     def sleep(_seconds)
     end
   end
@@ -92,6 +95,39 @@ class ReleaseTest < Minitest::Test
     assert_equal 0, @release.lookups
     assert_includes @output.string, "Dry run complete"
     assert_includes @output.string, "Commit: uncommitted"
+  end
+
+  def test_existing_artifact_is_verified_without_rebuilding
+    commit
+    run_release
+    @release.verifications.clear
+    run_release(artifact: File.join(@directory, "pkg/textfsm-release-test-0.1.0.gem"))
+    assert_empty @release.verifications
+    assert_empty @release.pushes
+  end
+
+  def test_replaced_artifact_content_is_rejected_before_registry_access
+    commit
+    run_release
+    File.write(File.join(@directory, "payload.rb"), "different source\n")
+    error = assert_raises(Release::Error) do
+      run_release(artifact: File.join(@directory, "pkg/textfsm-release-test-0.1.0.gem"))
+    end
+    assert_includes error.message, "content differs"
+    assert_equal 0, @release.lookups
+  end
+
+  def test_download_is_checked_against_the_verified_bytes
+    spec = Gem::Specification.load(File.join(@directory, "textfsm.gemspec"))
+    release = Release.new(root: @directory, output: @output)
+    response = Net::HTTPOK.new("1.1", "200", "OK")
+    response.define_singleton_method(:body) { "downloaded bytes" }
+    http = Object.new
+    http.define_singleton_method(:get) { |_path| response }
+    Net::HTTP.stub(:start, ->(*, **, &block) { block.call(http) }) do
+      assert_raises(Release::Error) { release.send(:confirm_download!, spec, "wrong checksum") }
+      release.send(:confirm_download!, spec, Digest::SHA256.hexdigest("downloaded bytes"))
+    end
   end
 
   def test_push_requires_a_commit_before_verification
