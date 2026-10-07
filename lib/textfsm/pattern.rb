@@ -16,7 +16,7 @@ module TextFSM
       @regexp = Regexp.new("\\A(?:#{expression})").freeze
       @names = @group_names.keys.freeze
       freeze
-    rescue RegexpError, ArgumentError, RangeError => e
+    rescue RegexpError, ArgumentError, RangeError, EncodingError => e
       raise TemplateError, "Invalid regular expression #{source.inspect}: #{e.message}"
     end
 
@@ -30,6 +30,16 @@ module TextFSM
 
     def named_captures(match)
       @group_names.transform_values { |internal_name| match[internal_name] }
+    end
+
+    # 解析器逐项消费命名捕获，避免每条匹配规则都构造临时 Hash。
+    def each_capture(match)
+      return enum_for(__method__, match) { @group_names.size } unless block_given?
+
+      @group_names.each do |name, internal_name|
+        yield name, match[internal_name]
+      end
+      self
     end
 
     # Ruby drops unnamed captures when named captures are present. Giving every

@@ -163,6 +163,26 @@ class CliTableTest < Minitest::Test
     end
   end
 
+  def test_invalid_encoding_preserves_previous_parse_and_index_state
+    Dir.mktmpdir do |directory|
+      template = File.join(directory, "template")
+      index = File.join(directory, "index")
+      File.write(template, "Value X (\\w+)\n\nStart\n  ^${X} -> Record\n")
+      File.write(index, "Template,Vendor\ntemplate,VendorA\n")
+      table = TextFSM::CliTable.new(index: "index", template_dir: directory).parse("first", attributes: { Vendor: "VendorA" })
+      before = [table.header, table.rows, table.keys, table.input, table.index]
+
+      File.binwrite(template, "# comment\xFF\n")
+      assert_raises(TextFSM::TemplateError) { table.parse("second", templates: "template") }
+      assert_equal before, [table.header, table.rows, table.keys, table.input, table.index]
+      File.binwrite(index, "Template,Vendor\ntemplate,Vendor\xFF\n")
+      assert_raises(TextFSM::IndexError) { table.load_index("index") }
+      assert_equal before, [table.header, table.rows, table.keys, table.input, table.index]
+      File.write(template, "Value X (\\w+)\n\nStart\n  ^${X} -> Record\n")
+      assert_equal [["third"]], table.parse("third", templates: "template").rows
+    end
+  end
+
   def test_reused_templates_reset_filldown_after_success_and_failure
     Dir.mktmpdir do |directory|
       File.write(File.join(directory, "template"), <<~'FSM')

@@ -4,6 +4,51 @@ require_relative "test_helper"
 require_relative "../lib/textfsm/index_table"
 
 class IndexTableTest < Minitest::Test
+  Attribute = Struct.new(:text, :conversions) do
+    def to_s
+      self.conversions += 1
+      text
+    end
+  end
+
+  def test_attribute_values_are_converted_once_per_query_and_only_when_matched
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,VendorA\\Z\nsecond,VendorB\\Z\n")
+      index = TextFSM::IndexTable.new(path, compile: ->(key, value) { value unless key == "Template" })
+      value = Attribute.new("VendorB", 0)
+      ignored = Object.new
+      def ignored.to_s
+        raise "Unused values must not be converted"
+      end
+      attributes = { Vendor: value, Unknown: ignored, Template: ignored }.freeze
+
+      assert_equal "second", index.match(attributes).fetch("Template")
+      assert_equal 1, value.conversions
+      assert_same value, attributes[:Vendor]
+      value.text = "VendorA"
+      assert_equal "first", index.match(attributes).fetch("Template")
+      assert_equal 2, value.conversions
+
+      File.write(path, "Template,Vendor\nwildcard,\nsecond,VendorB\\Z\n")
+      wildcard = TextFSM::IndexTable.new(path)
+      assert_equal "wildcard", wildcard.match(Vendor: ignored).fetch("Template")
+    end
+  end
+
+  def test_invalid_index_encoding_reports_the_file_and_line
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      ["Template,Vendor\nfirst,Vendor\xFF\n", "Template,Vendor\n# comment\xFF\n"].each do |source|
+        File.binwrite(path, source)
+        error = assert_raises(TextFSM::IndexError) { TextFSM::IndexTable.new(path) }
+        assert_includes error.message, path
+        assert_includes error.message, "UTF-8"
+        assert_includes error.message, "2"
+      end
+    end
+  end
+
   def test_header_only_index_is_an_empty_enumerable
     Dir.mktmpdir do |directory|
       path = File.join(directory, "index")

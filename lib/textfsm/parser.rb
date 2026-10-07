@@ -26,6 +26,7 @@ module TextFSM
       @states.freeze
       @output_fields = @fields.each_value.select(&:visible?).freeze
       @header = @output_fields.map(&:name).freeze
+      @output_columns = @output_fields.each_with_index.to_h.freeze
       reset
     end
 
@@ -83,9 +84,10 @@ module TextFSM
 
     # Option callbacks use the same visible-column mapping as record output.
     def fill_up(field)
-      column = @output_fields.index(field)
+      column = @output_columns[field]
       return unless column
 
+      snapshot = nil
       (@rows.length - 1).downto(0) do |index|
         row = @rows[index]
         value = row[column]
@@ -93,7 +95,8 @@ module TextFSM
 
         # Records are immutable so earlier snapshots can safely share them.
         replacement = row.dup
-        replacement[column] = Data.copy(field.value, immutable: true)
+        # Fillup 接收非空值，同一次回填共享冻结快照，导出时仍各自复制。
+        replacement[column] = snapshot ||= Data.copy(field.value, immutable: true)
         @rows[index] = replacement.freeze
       end
     end
@@ -135,6 +138,9 @@ module TextFSM
     def read_template(template)
       template = template.read if template.respond_to?(:read)
       raise TemplateError, "Template must be a String or readable IO" unless template.is_a?(String)
+      unless template.encoding.ascii_compatible? && template.valid_encoding?
+        raise TemplateError, "Invalid template encoding: #{template.encoding}"
+      end
 
       template
     end
@@ -207,7 +213,7 @@ module TextFSM
         match = rule.pattern.match(line)
         next unless match
 
-        rule.pattern.named_captures(match).each do |name, value|
+        rule.pattern.each_capture(match) do |name, value|
           @fields[name]&.assign(value)
         end
         case rule.record_action

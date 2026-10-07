@@ -3,6 +3,26 @@
 require_relative "test_helper"
 
 class PatternTest < Minitest::Test
+  def test_invalid_pattern_encodings_raise_template_errors
+    ["literal\xFF", "literal".encode("UTF-16LE")].each do |source|
+      assert_raises(TextFSM::TemplateError) { TextFSM::Pattern.new(source) }
+    end
+  end
+
+  def test_capture_iteration_preserves_names_order_and_optional_values
+    pattern = TextFSM::Pattern.new('(?P<name>\w+)(?: (?P<age>\d+))? (ignored)')
+    match = pattern.match("Alice ignored")
+    captures = pattern.each_capture(match)
+
+    assert_kind_of Enumerator, captures
+    assert_equal 2, captures.size
+    assert_equal [%w[name Alice], ["age", nil]], captures.to_a
+    assert_equal pattern.named_captures(match), captures.to_h
+    assert_same(pattern, pattern.each_capture(match) { |name, _value| assert name.frozen? })
+    empty = TextFSM::Pattern.new("plain")
+    assert_empty empty.each_capture(empty.match("plain")).to_a
+  end
+
   def test_character_sets_cannot_be_used_as_range_endpoints
     %w[w W d D s S].each do |escape|
       ["[\\#{escape}-a]", "[a-\\#{escape}]", "[^\\#{escape}-z]", "(?a:[\\#{escape}-z])"].each do |pattern|

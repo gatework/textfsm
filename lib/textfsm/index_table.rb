@@ -10,6 +10,14 @@ module TextFSM
   class IndexTable
     include Enumerable
 
+    # 转换结果仅属于当前查询；通配条件或未使用的属性不会触发转换。
+    Attribute = Struct.new(:name, :value) do
+      def text
+        @text ||= value.to_s
+      end
+    end
+    private_constant :Attribute
+
     attr_reader :header
 
     def initialize(path, transform: nil, compile: nil)
@@ -46,11 +54,14 @@ module TextFSM
 
     # Empty cells are wildcards. Attributes absent from the index are ignored.
     def match(attributes)
-      attributes = attributes.map { |key, value| [key.to_s, value] }
+      attributes = attributes.filter_map do |key, value|
+        name = key.to_s
+        Attribute.new(name, value) if @header.include?(name)
+      end
       index = @patterns.index do |patterns|
-        attributes.all? do |key, value|
-          pattern = patterns[key]
-          pattern.nil? || pattern.match?(value.to_s)
+        attributes.all? do |attribute|
+          pattern = patterns[attribute.name]
+          pattern.nil? || pattern.match?(attribute.text)
         end
       end
       @rows[index] if index
@@ -62,7 +73,9 @@ module TextFSM
       lines = File.foreach(path, encoding: "UTF-8")
       header = nil
       rows = []
-      lines.each do |raw|
+      lines.with_index(1) do |raw, line_number|
+        raise IndexError, "#{path}: Invalid UTF-8 at line #{line_number}" unless raw.valid_encoding?
+
         line = raw.strip
         next if line.empty? || line.start_with?("#")
 

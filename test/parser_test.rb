@@ -292,6 +292,30 @@ class ParserTest < Minitest::Test
     end
   end
 
+  def test_invalid_template_encoding_raises_template_errors
+    ["# invalid \xFF\n#{SIMPLE}", SIMPLE.sub("Start", "Start\xFF")].each do |template|
+      [template, StringIO.new(template)].each do |source|
+        error = assert_raises(TextFSM::TemplateError) { TextFSM::Parser.new(source) }
+        assert_includes error.message, "UTF-8"
+      end
+    end
+    error = assert_raises(TextFSM::TemplateError) { TextFSM::Parser.new(SIMPLE.encode("UTF-16LE")) }
+    assert_includes error.message, "UTF-16LE"
+  end
+
+  def test_capture_assignment_keeps_optional_nil_values_and_nested_names
+    template = <<~'FSM'
+      Value Filldown LABEL (\w+)
+      Value Required ID (\d+)
+
+      Start
+        ^id ${ID}(?: ${LABEL})?(?: (?P<unused>\w+))?$$ -> Record
+    FSM
+    parser = TextFSM::Parser.new(template)
+
+    assert_equal [["first", "1"], ["", "2"]], parser.parse("id 1 first extra\nid 2\n")
+  end
+
   class Skip < TextFSM::Options::Base
     def before_record
       throw :skip_record if field.value == "skip"
@@ -363,6 +387,33 @@ class ParserTest < Minitest::Test
     assert_equal "Beta", parser.rows[2][0]["label"]
     parser.reset
     assert_equal "Beta", latest_snapshot[2][0]["label"]
+  end
+
+  def test_fillup_reuses_values_without_sharing_mutable_exports_or_crossing_filled_rows
+    template = <<~'FSM'
+      Value CountRecords,Fillup LABEL (\w+)
+      Value Required ID (\d+)
+
+      Start
+        ^label ${LABEL}
+        ^id ${ID} -> Record
+    FSM
+    parser = TextFSM::Parser.new(template, options: { CountRecords: CountRecords })
+    empty = parser.feed("id 1\nid 2\n").rows
+    first = parser.feed("label Alpha\nid 3\nid 4\nid 5\n").rows
+    latest = parser.feed("label Beta\n").rows
+
+    assert_equal [["", "1"], ["", "2"]], empty
+    assert_equal(%w[Alpha Alpha Alpha Beta Beta], latest.map { |row| row[0]["label"] })
+    assert_equal([0, 0, 1, 0, 0], latest.map { |row| row[0]["records"] })
+    assert_equal [["", "4"], ["", "5"]], first.last(2)
+    exported = parser.to_hashes
+    exported[0]["LABEL"]["label"].replace("changed")
+    assert_equal "Alpha", exported[1]["LABEL"]["label"]
+    assert_equal "Alpha", latest[0][0]["label"]
+    assert_raises(FrozenError) { latest[1][0]["label"].replace("changed") }
+    parser.reset
+    assert_equal "Beta", latest.last[0]["label"]
   end
 
   def test_empty_visible_records_still_clear_hidden_fields
