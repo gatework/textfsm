@@ -2,6 +2,8 @@
 
 require_relative "test_helper"
 require_relative "../lib/textfsm/cli_table"
+require "minitest/mock"
+require "timeout"
 
 class CliTableTest < Minitest::Test
   DIRECTORY = File.join(__dir__, "fixtures/upstream")
@@ -158,6 +160,112 @@ class CliTableTest < Minitest::Test
         @table.parse(INPUT, templates: templates)
       end
       assert_same before, @table.rows
+    end
+  end
+
+  def test_reused_templates_reset_filldown_after_success_and_failure
+    Dir.mktmpdir do |directory|
+      File.write(File.join(directory, "template"), <<~'FSM')
+        Value Filldown LABEL (\w+)
+        Value Key,Required ID (\d+)
+
+        Start
+          ^label ${LABEL}
+          ^id ${ID} -> Record
+          ^bad -> Error
+      FSM
+      table = TextFSM::CliTable.new(template_dir: directory)
+      table.parse("label first\nid 1\n", templates: "template")
+      before = [table.header, table.rows, table.keys, table.input]
+      assert_raises(TextFSM::ParseError) { table.parse("label failed\nbad\n", templates: "template") }
+      assert_equal before, [table.header, table.rows, table.keys, table.input]
+
+      table.parse("id 2\n", templates: "template")
+      assert_equal [["", "2"]], table.rows
+      assert_equal ["2"], table.key_for(table[0])
+      assert_equal [%w[first 1]], before[1]
+    end
+  end
+
+  def test_template_changes_are_detected_even_with_the_same_size_and_mtime
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "template")
+      File.write(path, "Value X (\\w+)\n\nStart\n  ^${X} -> Record\n")
+      table = TextFSM::CliTable.new(template_dir: directory)
+      table.parse("first", templates: "template")
+      timestamp = File.mtime(path)
+      File.write(path, "Value Y (\\w+)\n\nStart\n  ^${Y} -> Record\n")
+      File.utime(timestamp, timestamp, path)
+      table.parse("second", templates: "template")
+
+      assert_equal ["Y"], table.header
+      assert_equal [["second"]], table.rows
+      File.unlink(path)
+      assert_raises(Errno::ENOENT) { table.parse("third", templates: "template") }
+      assert_equal [["second"]], table.rows
+    end
+  end
+
+  def test_key_positions_follow_new_templates_and_explicit_key_changes
+    Dir.mktmpdir do |directory|
+      File.write(File.join(directory, "first"), "Value Key ID (\\w+)\nValue NAME (\\w+)\n\nStart\n  ^${ID} ${NAME} -> Record\n")
+      File.write(File.join(directory, "second"), "Value NAME (\\w+)\nValue Key ID (\\w+)\n\nStart\n  ^${NAME} ${ID} -> Record\n")
+      table = TextFSM::CliTable.new(template_dir: directory).parse("1 Alice", templates: "first")
+      assert_equal ["1"], table.key_for(table[0])
+      table.keys = ["NAME"]
+      assert_equal ["Alice"], table.key_for(table[0])
+      assert_raises(KeyError) { table.keys = ["unknown"] }
+      assert_equal ["Alice"], table.key_for(table[0])
+      table.parse("Bob 2", templates: "second")
+      assert_equal ["2"], table.key_for(table[0])
+      merged = table.merge(TextFSM::Table.new(["EXTRA"], [["added"]]))
+      merged.keys = %w[EXTRA ID]
+      assert_equal %w[added 2], merged.key_for(merged[0])
+      assert_equal ["2"], table.key_for(table[0])
+    end
+  end
+
+  def test_merged_tables_parse_without_sharing_runtime_state
+    entered = Queue.new
+    resume = Queue.new
+    constructor = TextFSM::Parser.method(:new)
+    factory = lambda do |*args, **keywords|
+      constructor.call(*args, **keywords).tap do |parser|
+        parser.define_singleton_method(:process_line) do |line|
+          super(line)
+          next unless line == "label blocked"
+
+          entered << true
+          resume.pop
+        end
+      end
+    end
+    Dir.mktmpdir do |directory|
+      File.write(File.join(directory, "template"), <<~'FSM')
+        Value Filldown LABEL (\w+)
+        Value Required ID (\d+)
+
+        Start
+          ^label ${LABEL}
+          ^id ${ID} -> Record
+      FSM
+      TextFSM::Parser.stub(:new, factory) do
+        table = TextFSM::CliTable.new(template_dir: directory).parse("label initial\nid 0", templates: "template")
+        merged = table.merge(TextFSM::Table.new(["EXTRA"], [["extra"]]))
+        worker = Thread.new { table.parse("label blocked\nid 1", templates: "template") }
+        begin
+          Timeout.timeout(5) { entered.pop }
+          merged.parse("label independent\nid 2", templates: "template")
+          resume << true
+          Timeout.timeout(5) { worker.value }
+
+          assert_equal [%w[blocked 1]], table.rows
+          assert_equal [%w[independent 2]], merged.rows
+        ensure
+          resume << true
+          worker.kill.join if worker.alive?
+        end
+      end
     end
   end
 end

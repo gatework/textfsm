@@ -3,6 +3,28 @@
 require_relative "test_helper"
 
 class PatternTest < Minitest::Test
+  def test_character_sets_cannot_be_used_as_range_endpoints
+    %w[w W d D s S].each do |escape|
+      ["[\\#{escape}-a]", "[a-\\#{escape}]", "[^\\#{escape}-z]", "(?a:[\\#{escape}-z])"].each do |pattern|
+        assert_raises(TextFSM::TemplateError, pattern) { TextFSM::Pattern.new(pattern) }
+      end
+    end
+  end
+
+  def test_literal_hyphens_and_character_ranges_keep_their_meaning
+    assert_equal({}, captures('[\\w-]+\\Z', "a-"))
+    assert_equal({}, captures('[-\\w]+\\Z', "-a"))
+    assert_equal({}, captures('[\\w\\-a]+\\Z', "a-"))
+    assert_nil captures('[\\w\\-a]+\\Z', "`")
+    assert_equal({}, captures('[a-b-c]+\\Z', "abc-"))
+    assert_equal({}, captures('[--a]+\\Z', "-0a"))
+    assert_equal({}, captures('[]-a]+\\Z', "]^_`a"))
+    assert_equal({}, captures('[\\x30-\\x39]+\\Z', "123"))
+    assert_nil captures('[\\x30-\\x39]+\\Z', "a")
+    assert_equal({}, captures('[^\\w-]+\\Z', "!"))
+    assert_nil captures('[^\\w-]+\\Z', "-")
+  end
+
   def captures(pattern, input)
     compiled = TextFSM::Pattern.new(pattern)
     match = compiled.match(input)

@@ -31,7 +31,7 @@ gem "textfsm", path: "/path/to/textfsm"
 ```sh
 bundle install
 bundle exec rake build
-gem install ./pkg/textfsm-0.2.2.gem
+gem install ./pkg/textfsm-0.3.0.gem
 ```
 
 源码仓库：[gatework/textfsm](https://github.com/gatework/textfsm)。
@@ -146,6 +146,16 @@ rows = fsm.parse(another_command_output)
 
 `parse` 和 `rows` 返回累计结果的深度冻结快照；它们不会自动重置解析器。需要可修改的数据时使用 `to_a`、`to_hashes` 或 `parse_hashes`，这些接口返回独立的深拷贝。分段必须按完整行切分，`eof: false` 仅抑制最终 `Record`，不缓存半行。`parse` 也接受可读取的 IO，但会一次读取内容。不同设备输出应先 `reset` 或使用新实例；有状态的实例不应由多个线程并发共享。`Fillup` 会更新解析器内部的历史行；此前返回的快照不变，后续 `parse`／`rows` 会包含回填后的结果。
 
+处理大量小分段、无需每次读取累计结果时，使用 `feed`。它返回解析器自身，默认 `eof: false`；结束时显式传入 `eof: true`，再读取结果。它与 `parse` 使用相同的状态机、完整行边界和终止状态规则：
+
+```ruby
+fsm.reset
+chunks.each do |chunk|
+  fsm.feed(chunk)
+end
+rows = fsm.feed("", eof: true).rows
+```
+
 可用接口：`header`、`rows`、`current_state`、`states`、`state_names`、`fields_with_option("Key")`、`to_a`、`to_hashes`、`to_s`（重建去除注释的模板）。表头、状态规则及编译后的模式只读；字段的运行时状态保留在解析器内部。`fields_with_option` 也接受 `:Key` 等 Symbol。
 
 ## 根据设备与命令选择模板
@@ -183,6 +193,8 @@ table.parse(output, templates: "first.textfsm:second.textfsm")
 
 `Table#merge(other, keys: ["ID"])` 返回合入新列的新表，保留原表；`merge!` 更新当前表并返回自身。新表保留接收者的类型，因此 `CliTable#merge` 也保留索引、输入和键。表头和 `rows`／`table[index]` 只读；`to_a` 和 `to_hashes` 返回独立副本，嵌套的列表与 Hash 也不会共享可变数据。构造表格时拒绝重复列名和宽度不一致的行。
 
+表格和自定义选项的值支持字符串、`Integer`、`Float`、`Rational`、`Complex`、Symbol、`nil`、布尔值，以及由它们构成的无环 Array、Hash 和 Struct。Struct 保留类型并递归复制成员；其他对象会抛出 `TypeError`，避免浅复制破坏快照隔离。内部可以共享已深度冻结的值，导出可修改结果时仍会复制。
+
 `CliTable#keys` 返回模板声明的键，使用 `table.keys = ["ID"]` 显式设置，或 `table.keys += ["NAME"]` 增补。`key_for(row)` 返回键值数组，没有键时返回 `[]`。排序遵循 Ruby 自身的比较规则：
 
 ```ruby
@@ -193,6 +205,8 @@ table.sort! { |left, right| right <=> left }       # 倒序
 ```
 
 `load_index("another_index")` 可替换索引。多模板解析、合并或索引加载失败时保留上次成功的表头、数据、键及输入。
+
+同一 CliTable 实例重复解析时，会复用最近一次成功解析所选模板的 Parser。每次仍读取模板文件，以内容比较检测修改；文件读取和模板编译错误不会被缓存掩盖。每个模板处理结束后，无论成功或失败都会重置解析状态。`dup`／`merge` 产生的新表使用独立的解析器缓存；同一有状态实例不应由多个线程并发调用。
 
 ## 命令行
 
@@ -242,7 +256,7 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 工作流验证并上传同次 CI 的 gem，再核对 RubyGems 下载和 GitHub Release 的 SHA256。
 流程、账号绑定及失败恢复见 [发布说明](docs/RELEASING.md)。
 
-本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.2.2.gem`；
+本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.3.0.gem`；
 已有产物路径不会重新构建。更新版本及 CHANGELOG、提交并确认远端 CI 后推送对应版本标签。
 
 ## 兼容范围与验证

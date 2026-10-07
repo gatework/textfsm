@@ -7,6 +7,19 @@ class CLITest < Minitest::Test
   TEMPLATE = File.expand_path("../examples/cisco_version_template", __dir__)
   INPUT = File.expand_path("../examples/cisco_version_example", __dir__)
 
+  def test_validation_rejects_character_set_ranges_with_a_template_line
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "template")
+      File.write(path, "Value X ([\\w-a]+)\n\nStart\n  ^${X} -> Record\n")
+      status, output, error = run_cli("--validate", path)
+
+      assert_equal 2, status
+      assert_empty output
+      assert_includes error, "Line: 1"
+      assert_includes error, "range"
+    end
+  end
+
   def run_cli(*args, stdin: "")
     output = StringIO.new
     error = StringIO.new

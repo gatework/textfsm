@@ -4,6 +4,62 @@ require_relative "test_helper"
 require_relative "../lib/textfsm/table"
 
 class TableTest < Minitest::Test
+  Person = Struct.new(:name, :details, keyword_init: true)
+
+  def test_struct_members_are_owned_by_the_table_and_its_exports
+    person = Person.new(name: +"Alice", details: { "labels" => [+"blue"] })
+    table = TextFSM::Table.new(["PERSON"], [[person]])
+    person.name.replace("changed")
+    person.details["labels"].first.replace("changed")
+
+    assert_instance_of Person, table[0][0]
+    assert_equal "Alice", table[0][0].name
+    assert_equal ["blue"], table[0][0].details["labels"]
+    assert_raises(FrozenError) { table[0][0].name.replace("changed") }
+    assert_raises(FrozenError) { table[0][0].details["labels"] << "changed" }
+    exported = table.to_a[0][0]
+    exported.name.replace("exported")
+    exported.details["labels"].first.replace("exported")
+    table.to_hashes[0]["PERSON"].details["labels"] << "extra"
+
+    assert_equal "Alice", table[0][0].name
+    assert_equal ["blue"], table[0][0].details["labels"]
+  end
+
+  def test_opaque_values_are_rejected_even_when_the_object_itself_is_frozen
+    [Object.new, Object.new.freeze].each do |value|
+      error = assert_raises(TypeError) { TextFSM::Table.new(["VALUE"], [[{ "nested" => value }]]) }
+      assert_includes error.message, "Object"
+    end
+  end
+
+  def test_frozen_containers_do_not_hide_mutable_descendants
+    value = { "labels" => [+"original"].freeze }.freeze
+    table = TextFSM::Table.new(["VALUE"].freeze, [[value].freeze].freeze)
+    value["labels"].first.replace("changed")
+
+    assert_equal ["original"], table[0][0]["labels"]
+    assert_raises(FrozenError) { table[0][0]["labels"].first.replace("changed") }
+  end
+
+  def test_frozen_hash_defaults_are_not_imported_into_record_snapshots
+    value = Hash.new { |_hash, key| "unexpected #{key}" }.merge("name" => "Alice").freeze
+    table = TextFSM::Table.new(["VALUE"], [[value]])
+
+    assert_nil table[0][0]["missing"]
+    assert_equal({ "name" => "Alice" }, table[0][0])
+  end
+
+  def test_frozen_identity_hashes_keep_normal_record_key_lookup
+    key = (+"name").freeze
+    value = {}.compare_by_identity
+    value[key] = "Alice"
+    table = TextFSM::Table.new(["VALUE"], [[value.freeze]])
+
+    assert_equal "Alice", table[0][0].fetch("name")
+    assert_equal "Alice", table.to_hashes[0]["VALUE"].fetch("name")
+  end
+
   def test_constructor_copies_nested_values_and_header_strings
     header = [+"PERSON"]
     rows = [[[{ "name" => +"Alice" }]]]

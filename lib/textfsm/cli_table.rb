@@ -14,6 +14,8 @@ module TextFSM
       super()
       @template_dir = File.path(template_dir).dup.freeze
       @keys = [].freeze
+      @key_positions = [].freeze
+      @parsers = {}.freeze
       load_index(index) if index
     end
 
@@ -35,34 +37,65 @@ module TextFSM
       raise ArgumentError, "text must be a String or readable IO" unless text.is_a?(String)
 
       keys = []
+      parsers = {}
       table = names.reduce(nil) do |result, name|
-        parser = Parser.from_file(File.join(@template_dir, name))
+        parser = load_parser(name, parsers)
         keys = parser.fields_with_option("Key") if keys.empty?
-        parsed = Table.new(parser.header, parser.parse(text))
+        parsed = parse_table(parser, text)
         result ? result.merge!(parsed, keys: keys) : parsed
       end
       # Replace the result only after every template and merge succeeds.
       input = text.dup.freeze
-      keys = Data.copy(keys, immutable: true)
+      keys, key_positions = prepare_keys(keys, table.header)
       @input = input
       @header = table.header
       @rows = table.rows
       @keys = keys
+      @key_positions = key_positions
+      @parsers = parsers.freeze
       self
     end
 
     def keys=(columns)
-      missing = columns - @header
-      raise KeyError, "Unknown key columns: #{missing.join(', ')}" unless missing.empty?
-
-      @keys = Data.copy(columns.uniq, immutable: true)
+      @keys, @key_positions = prepare_keys(columns, @header)
+      @keys
     end
 
     def key_for(row)
-      row.values_at(*@keys.map { |key| @header.index(key) })
+      row.values_at(*@key_positions)
     end
 
     private
+
+    def initialize_copy(other)
+      super
+      # merge 通过 dup 保留表类型，但有状态的解析器不能跨表实例共享。
+      @parsers = {}.freeze
+    end
+
+    def prepare_keys(columns, header)
+      missing = columns - header
+      raise KeyError, "Unknown key columns: #{missing.join(', ')}" unless missing.empty?
+
+      keys = Data.copy(columns.uniq, immutable: true)
+      [keys, keys.map { |key| header.index(key) }.freeze]
+    end
+
+    def load_parser(name, parsers)
+      # 按内容检测模板变更，缓存仅保留本次成功选择的模板。
+      source = File.read(File.join(@template_dir, name), encoding: "UTF-8")
+      cached = parsers[name] || @parsers[name]
+      cached = [source.freeze, Parser.new(source)].freeze unless cached && cached.first == source
+      parsers[name] = cached
+      cached.last
+    end
+
+    def parse_table(parser, text)
+      Table.new(parser.header, parser.parse(text))
+    ensure
+      # 成功和失败都释放运行状态；Table 持有的冻结快照不受 reset 影响。
+      parser.reset
+    end
 
     def find_templates(attributes)
       raise IndexError, "Provide templates or load an index" unless @index

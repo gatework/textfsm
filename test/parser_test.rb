@@ -5,6 +5,67 @@ require_relative "test_helper"
 class ParserTest < Minitest::Test
   SIMPLE = "Value X (.*)\n\nStart\n  ^${X} -> Record\n"
 
+  Person = Struct.new(:name)
+
+  class AsPerson < TextFSM::Options::Base
+    def after_assign
+      field.value = Person.new(field.value)
+    end
+  end
+
+  def test_struct_snapshots_and_exports_cannot_change_filldown_state
+    template = <<~'FSM'
+      Value AsPerson,Filldown PERSON (\w+)
+      Value Required ID (\d+)
+
+      Start
+        ^person ${PERSON}
+        ^id ${ID} -> Record
+    FSM
+    parser = TextFSM::Parser.new(template, options: { AsPerson: AsPerson })
+    snapshot = parser.parse("person Alice\nid 1\n", eof: false)
+    parser.to_a[0][0].name.replace("changed")
+
+    assert_equal "Alice", snapshot[0][0].name
+    assert_raises(FrozenError) { snapshot[0][0].name.replace("changed") }
+    assert_equal "Alice", parser.parse("id 2\n", eof: false).last[0].name
+  end
+
+  def test_feed_returns_the_parser_and_defers_the_final_record_by_default
+    parser = TextFSM::Parser.new("Value X (.*)\n\nStart\n  ^${X}\n")
+
+    assert_same parser, parser.feed(StringIO.new("first\n"))
+    assert_empty parser.rows
+    assert_same parser, parser.feed("last\n", eof: true)
+    assert_equal [["last"]], parser.rows
+    assert_raises(ArgumentError) { parser.feed(nil) }
+  end
+
+  def test_feed_preserves_previous_snapshots_during_fillup_and_reset
+    template = "Value Fillup X (.*)\nValue Required ID (\\d+)\n\nStart\n  ^id ${ID} -> Record\n  ^x ${X}\n"
+    parser = TextFSM::Parser.new(template)
+    snapshot = parser.feed("id 1\n").rows
+    parser.feed("x filled\n").feed("id 2\n")
+
+    assert_equal [["", "1"]], snapshot
+    assert_equal [%w[filled 1], %w[filled 2]], parser.rows
+    latest = parser.rows
+    parser.reset.feed("id 3\n")
+    assert_equal [["", "3"]], parser.rows
+    assert_equal [%w[filled 1], %w[filled 2]], latest
+  end
+
+  def test_feed_keeps_terminal_states_until_reset
+    parser = TextFSM::Parser.new("Value X (.*)\n\nStart\n  ^${X} -> Record End\n")
+    parser.feed("one\ntwo\n")
+    input = StringIO.new("three\n")
+    parser.feed(input, eof: true)
+
+    assert_equal [["one"]], parser.rows
+    assert_equal 0, input.pos
+    assert_equal [["four"]], parser.reset.feed("four\n").rows
+  end
+
   def test_arrays_hashes_and_io
     fsm = TextFSM::Parser.new(StringIO.new(SIMPLE))
     assert_equal ["X"], fsm.header

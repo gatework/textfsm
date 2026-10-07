@@ -210,19 +210,32 @@ module TextFSM
       def character_class
         expression = +"["
         expression << @scanner.getch if @scanner.peek(1) == "^"
-        expression << "\\]" if @scanner.scan(/\]/)
+        first = true
         until @scanner.eos?
           character = @scanner.getch
-          return "#{expression}]" if character == "]"
+          return "#{expression}]" if character == "]" && !first
 
-          expression << case character
-                        when "\\" then escape(in_class: true)
-                        when "[" then "\\["
-                        when "&" then "\\&"
-                        else character
-                        end
+          first = false
+          atom, literal = class_atom(character)
+          if @scanner.peek(1) == "-" && @scanner.peek(2) != "-]"
+            @scanner.getch
+            ending, end_literal = class_atom(@scanner.getch)
+            raise ArgumentError, "bad character range: endpoints must be single characters" unless literal && end_literal
+
+            atom = "#{atom}-#{ending}"
+          end
+          expression << atom
         end
         raise ArgumentError, "unterminated character class"
+      end
+
+      def class_atom(character)
+        raise ArgumentError, "unterminated character class" unless character
+        return ["\\&", true] if character == "&"
+        return [Regexp.escape(character), true] unless character == "\\"
+
+        literal = !@scanner.peek(1).match?(/[dDsSwW]/)
+        [escape(in_class: true), literal]
       end
 
       def open_group

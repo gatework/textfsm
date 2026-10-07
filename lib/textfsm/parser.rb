@@ -59,13 +59,19 @@ module TextFSM
     # Calls accumulate state until reset. Chunks must end on a line boundary;
     # eof: false defers the implicit final Record. Results are frozen snapshots.
     def parse(text, eof: true)
-      consume_input(text, eof: eof)
+      feed(text, eof: eof)
       rows
     end
 
     def parse_hashes(text, eof: true)
-      consume_input(text, eof: eof)
+      feed(text, eof: eof)
       to_hashes
+    end
+
+    # 消费完整行但不读取累计快照；结束输入时显式指定 eof: true。
+    def feed(text, eof: false)
+      consume_input(text, eof: eof)
+      self
     end
 
     def fields_with_option(name)
