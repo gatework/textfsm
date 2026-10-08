@@ -22,12 +22,7 @@ module TextFSM
 
     def initialize(path, transform: nil, compile: nil)
       @header, @rows = Data.copy(read_table(path, transform), immutable: true)
-      @patterns = @rows.map do |row|
-        row.to_h do |key, value|
-          value = compile.call(key, value) if compile
-          [key, value.nil? || value.empty? ? nil : Pattern.new(value)]
-        end.freeze
-      end.freeze
+      @patterns = compile_patterns(compile)
       freeze
     rescue TemplateError => e
       raise IndexError, "#{path}: #{e.message}"
@@ -68,6 +63,17 @@ module TextFSM
     end
 
     private
+
+    def compile_patterns(compile)
+      # 仅在本次构建中共享不可变模式；回调仍逐单元格执行，缓存不跨索引保留。
+      compiled = {}
+      @rows.map do |row|
+        row.to_h do |key, value|
+          value = compile.call(key, value) if compile
+          [key, value.nil? || value.empty? ? nil : (compiled[value] ||= Pattern.new(value))]
+        end.freeze
+      end.freeze
+    end
 
     def read_table(path, transform)
       lines = File.foreach(path, encoding: "UTF-8")

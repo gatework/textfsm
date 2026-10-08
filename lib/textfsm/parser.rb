@@ -124,11 +124,10 @@ module TextFSM
       text = text.read if text.respond_to?(:read)
       raise ArgumentError, "text must be a String or readable IO" unless text.is_a?(String)
 
-      # StringScanner advances by bytes, including for multibyte input, without
-      # allocating all lines or repeatedly finding character offsets.
+      # scan_until 返回新字符串；chop! 原地移除一个分隔字符或整对 CRLF。
       scanner = StringScanner.new(text)
       while (line = scanner.scan_until(LINE_SEPARATOR))
-        process_line(line.byteslice(0, line.bytesize - scanner.matched_size))
+        process_line(line.chop!)
         break if terminal?
       end
       process_line(scanner.rest) unless terminal? || scanner.eos?

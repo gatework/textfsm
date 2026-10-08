@@ -100,6 +100,24 @@ class PatternTest < Minitest::Test
     assert_nil captures("(?s:a.(?-s:.)b)", "a\n\nb")
   end
 
+  def test_multiline_start_anchor_includes_the_empty_line_after_a_final_newline
+    ['(?m:a\n^)', 'a\n(?m:^)', '(?m:a\n^$)', '(?m:a\n(?P<last>^))'].each do |source|
+      pattern = TextFSM::Pattern.new(source)
+      match = pattern.match("a\n")
+
+      refute_nil match, source
+      assert_equal "a\n", match[0]
+      assert pattern.match?("a\n"), source
+      refute pattern.match?("a"), source
+    end
+    assert_equal({ "last" => "" }, captures('(?m:a\n(?P<last>^))', "a\n"))
+    assert_equal({}, captures('(?m:a\r\n^$)', "a\r\n"))
+    assert_equal({}, captures("(?m:^$)", ""))
+    assert_nil captures('a\n^', "a\n")
+    assert_nil captures('(?m:a\n(?-m:^))', "a\n")
+    assert_nil captures('(?m:a\r^)', "a\r")
+  end
+
   def test_case_flags_and_verbose_mode
     assert_equal({}, captures("(?i:hello)(?-i:WORLD)", "HeLLoWORLD"))
     assert_nil captures("(?i:hello)(?-i:WORLD)", "HeLLoworld")

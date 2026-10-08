@@ -92,6 +92,30 @@ class IndexTableTest < Minitest::Test
     end
   end
 
+  def test_repeated_patterns_keep_per_cell_callbacks_and_owned_sources
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor,Command\nfirst,A,show\nsecond,B,show\nthird,A,list\n")
+      calls = []
+      buffer = +""
+      compile = lambda do |key, value|
+        calls << [key, value]
+        buffer.replace(value) unless key == "Template"
+      end
+      index = TextFSM::IndexTable.new(path, compile: compile)
+      buffer.replace("changed")
+
+      assert_equal index.flat_map(&:to_a), calls
+      assert_equal "first", index.match(Vendor: "A", Command: "show").fetch("Template")
+      assert_equal "second", index.match(Vendor: "B", Command: "show").fetch("Template")
+      assert_equal "third", index.match(Vendor: "A", Command: "list").fetch("Template")
+      assert_nil index.match(Vendor: "changed")
+      changed = TextFSM::IndexTable.new(path, compile: ->(key, value) { "(?i:#{value})" unless key == "Template" })
+      assert_equal "first", changed.match(Vendor: "a", Command: "SHOW").fetch("Template")
+      assert_nil index.match(Vendor: "a", Command: "SHOW")
+    end
+  end
+
   def test_index_validation_and_wildcards
     Dir.mktmpdir do |dir|
       path = File.join(dir, "index")

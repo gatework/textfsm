@@ -31,7 +31,7 @@ gem "textfsm", path: "/path/to/textfsm"
 ```sh
 bundle install
 bundle exec rake build
-gem install ./pkg/textfsm-0.4.0.gem
+gem install ./pkg/textfsm-0.4.1.gem
 ```
 
 源码仓库：[gatework/textfsm](https://github.com/gatework/textfsm)。
@@ -185,6 +185,8 @@ cisco_version_template, Cisco, sh[[ow]] ve[[rsion]]
 
 每次查询按需将参与匹配的属性值转换为字符串，并在本次扫描中复用；未知属性和仅遇到通配条件的值不会触发转换。Symbol 与同名 String 属性分别参与匹配，传入的属性集合不会被修改。
 
+加载索引时，相同模式在当前索引内只编译一次；`IndexTable` 的 `transform:` 和 `compile:` 回调仍按文件顺序逐单元格执行，回调返回值不会被原地修改。
+
 可绕过 index 显式传入模板：
 
 ```ruby
@@ -260,7 +262,7 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 工作流验证并上传同次 CI 的 gem，再核对 RubyGems 下载和 GitHub Release 的 SHA256。
 流程、账号绑定及失败恢复见 [发布说明](docs/RELEASING.md)。
 
-本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.4.0.gem`；
+本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.4.1.gem`；
 已有产物路径不会重新构建。更新版本及 CHANGELOG、提交并确认远端 CI 后推送对应版本标签。
 
 ## 兼容范围与验证
@@ -268,6 +270,8 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 本项目实现 TextFSM 模板解析、状态机、全部五种内置字段选项、列表命名子组、字典输出，以及命令索引与多模板表合并。官方示例保存在 `examples/`。
 
 Ruby 使用 Onigmo 正则引擎。本项目转换 Python 命名组 `(?P<name>...)`、命名与数字反向引用、贪婪／懒惰／占有量词、常用内联标志 `i/m/s/x/a/u`、Unicode 字符类及锚点语义。**这不是完整 Python `re` 引擎的替代实现**：Unicode 名称转义 `\N{...}`、条件组等不支持的扩展会报 `TemplateError`；两种引擎的大小写折叠、复杂后行断言等细节仍可能不同。使用额外模板库时，应以实际模板与输入执行对照测试。
+
+多行模式的 `^` 匹配输入开头或换行后的位置，包括末尾换行后的空行。可匹配空串的重复组仍可能有不同的回溯结果，例如 `(?:\ba?){2}` 在 `"aa"` 上的匹配长度与 Python 不同；依赖这类行为的模板需单独对照验证。
 
 直接使用 `Pattern` 时，`named_captures(match)` 返回命名捕获的 Hash；`each_capture(match)` 按定义顺序逐项产出名称和值，保留未匹配组的 `nil`，无块时返回 Enumerator。Parser 使用逐项迭代传递字段值，避免为每条匹配规则构造临时 Hash。
 

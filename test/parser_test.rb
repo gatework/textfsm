@@ -108,6 +108,22 @@ class ParserTest < Minitest::Test
                  fsm.parse("a\r\nb\rc\vd\fe\x1cf\x1dg\x1eh\u0085i\u2028j\u2029k\n")
   end
 
+  def test_multibyte_lines_keep_empty_records_and_unterminated_tails
+    parser = TextFSM::Parser.new(SIMPLE)
+    separators = ["\n", "\r\n", "\r", "\v", "\f", "\x1c", "\x1d", "\x1e", "\u0085", "\u2028", "\u2029"]
+    separators.each do |separator|
+      text = "中文😀#{separator}#{separator}末尾".freeze
+      expected = [["中文😀"], [""], ["末尾"]]
+
+      assert_equal expected, parser.reset.parse(text), separator.inspect
+      assert_equal expected, parser.reset.parse("#{text}#{separator}"), separator.inspect
+      assert_equal [[""]], parser.reset.parse(separator), separator.inspect
+    end
+    snapshot = parser.reset.feed("先頭\r\n").rows
+    assert_equal [["先頭"], [""], ["末尾"]], parser.feed("\u2028末尾", eof: true).rows
+    assert_equal [["先頭"]], snapshot
+  end
+
   def test_end_remains_terminal_until_reset
     fsm = TextFSM::Parser.new("Value X (.*)\n\nStart\n  ^${X} -> Record End\n")
     assert_equal [["one"]], fsm.parse("one\ntwo")

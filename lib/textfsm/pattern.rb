@@ -109,7 +109,8 @@ module TextFSM
       end
 
       def anchor(character)
-        return character if @flags[:multiline]
+        # Ruby 的 ^ 不匹配末尾换行后的空行，需显式保留 Python 的起始位置。
+        return character == "^" ? "(?:\\A|(?<=\\n))" : "$" if @flags[:multiline]
 
         character == "^" ? "\\A" : "\\Z"
       end
