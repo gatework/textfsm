@@ -56,6 +56,26 @@ class PatternTest < Minitest::Test
     assert_nil captures('(?P<word>\w+)-(?P=word)', "abc-def")
   end
 
+  def test_unicode_identifier_capture_names_and_backreferences
+    %w[é Ⅻ _name word٣].each do |name|
+      source = "(?P<#{name}>a)(?P=#{name})\\Z"
+
+      assert_equal({ name => "a" }, captures(source, "aa"))
+      assert_nil captures(source, "ab")
+      assert_raises(TextFSM::TemplateError) do
+        TextFSM::Pattern.new("(?P<#{name}>a)(?P<#{name}>b)")
+      end
+    end
+  end
+
+  def test_capture_names_reject_non_identifier_numbers_and_leading_marks
+    ["x²", "²x", "\u0301name", "٣name"].each do |name|
+      assert_raises(TextFSM::TemplateError) do
+        TextFSM::Pattern.new("(?P<#{name}>a)")
+      end
+    end
+  end
+
   def test_unnamed_captures_keep_numeric_backreferences_when_named_groups_exist
     assert_equal({ "X" => "a" }, captures('(b)(?P<X>a)\1\2', "baba"))
     assert_nil captures('(b)(?P<X>a)\1\2', "baab")

@@ -153,6 +153,23 @@ class TableTest < Minitest::Test
     refute table.empty?
   end
 
+  def test_repeated_key_matches_keep_independent_exports_across_merges
+    left = TextFSM::Table.new(["ID"], [["same"], ["same"], ["missing"]])
+    right = TextFSM::Table.new(%w[ID DATA], [["same", [{ "tags" => ["first"] }]]])
+    merged = left.merge(right, keys: ["ID"])
+    exported = merged.to_a
+    exported[0][1][0]["tags"].first.replace("changed")
+
+    assert_equal ["first"], exported[1][1][0]["tags"]
+    assert_equal "", merged[2][1]
+    assert_equal ["first"], merged[0][1][0]["tags"]
+    assert_raises(FrozenError) { merged[1][1][0]["tags"] << "changed" }
+    second = left.merge(TextFSM::Table.new(%w[ID DATA], [["same", [{ "tags" => ["second"] }]]]), keys: ["ID"])
+    assert_equal ["second"], second[0][1][0]["tags"]
+    assert_equal ["first"], merged[0][1][0]["tags"]
+    assert_equal [["same"], ["same"], ["missing"]], left.rows
+  end
+
   def test_sorting_uses_ruby_comparators_and_preserves_rows_when_comparison_fails
     table = TextFSM::Table.new(["X"], [["10"], ["unknown"], ["2"]])
     assert_same table, table.sort!

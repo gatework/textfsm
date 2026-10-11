@@ -57,8 +57,8 @@ module TextFSM
       self
     end
 
-    # Calls accumulate state until reset. Chunks must end on a line boundary;
-    # eof: false defers the implicit final Record. Results are frozen snapshots.
+    # 调用会累计状态，直到 reset；分段须按完整行切分。
+    # eof: false 推迟最终 Record，返回结果为冻结快照。
     def parse(text, eof: true)
       feed(text, eof: eof)
       rows
@@ -82,7 +82,7 @@ module TextFSM
       @fields.each_value.filter_map { |field| field.name if field.option?(name) }
     end
 
-    # Option callbacks use the same visible-column mapping as record output.
+    # 选项回调与记录输出使用同一份可见列映射。
     def fill_up(field)
       column = @output_columns[field]
       return unless column
@@ -93,7 +93,7 @@ module TextFSM
         value = row[column]
         break if value && !(value.respond_to?(:empty?) && value.empty?)
 
-        # Records are immutable so earlier snapshots can safely share them.
+        # 记录不可变，既有快照可安全共享；回填通过替换整行完成。
         replacement = row.dup
         # Fillup 接收非空值，同一次回填共享冻结快照，导出时仍各自复制。
         replacement[column] = snapshot ||= Data.copy(field.value, immutable: true)
@@ -113,6 +113,12 @@ module TextFSM
     end
 
     private
+
+    def initialize_copy(other)
+      super
+      # 字段与自定义选项持有绑定当前解析器的运行状态，无法安全浅复制。
+      raise TypeError, "TextFSM::Parser cannot be copied; create a new parser from the template"
+    end
 
     def terminal?
       @current_state == "End" || @current_state == "EOF"

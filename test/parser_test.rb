@@ -7,6 +7,27 @@ class ParserTest < Minitest::Test
 
   Person = Struct.new(:name)
 
+  def test_parser_rejects_dup_and_clone_without_changing_option_state
+    template = <<~'FSM'
+      Value Filldown,Fillup LABEL (\w+)
+      Value Required ID (\d+)
+
+      Start
+        ^label ${LABEL}
+        ^id ${ID} -> Record
+    FSM
+
+    %i[dup clone].each do |operation|
+      parser = TextFSM::Parser.new(template)
+      snapshot = parser.feed("id 1\nlabel original\nid 2\n").rows
+
+      error = assert_raises(TypeError) { parser.public_send(operation) }
+      assert_includes error.message, "template"
+      assert_equal [%w[original 1], %w[original 2]], snapshot
+      assert_equal snapshot + [%w[original 3]], parser.feed("id 3\n").rows
+    end
+  end
+
   class AsPerson < TextFSM::Options::Base
     def after_assign
       field.value = Person.new(field.value)

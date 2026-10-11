@@ -1,8 +1,8 @@
 # frozen_string_literal: true
 
 module TextFSM
-  # Records contain nested lists and named captures. Every ownership boundary
-  # copies these values; callers can request an immutable result snapshot.
+  # 记录可包含嵌套列表与命名捕获；所有权边界复制这些值，
+  # 需要只读结果时返回深度冻结的快照。
   module Data
     def self.copy(value, immutable: false)
       # 只有整个值树都不可变时才共享，冻结外层容器并不代表成员已冻结。

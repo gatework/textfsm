@@ -4,7 +4,7 @@ require "strscan"
 require_relative "errors"
 
 module TextFSM
-  # Compile Python-style template patterns into immutable Ruby matchers.
+  # 将 Python 风格的模板正则编译为不可变的 Ruby 匹配器。
   class Pattern
     attr_reader :source, :regexp, :names
 
@@ -42,8 +42,8 @@ module TextFSM
       self
     end
 
-    # Ruby drops unnamed captures when named captures are present. Giving every
-    # capture an internal name preserves Python's numeric backreferences.
+    # Ruby 在有命名捕获时丢弃无名捕获；为每个捕获分配内部名称，
+    # 保留 Python 数字反向引用的语义。
     class Compiler
       ASSERTIONS = %w[A Z z b B].freeze
       CHARACTER_CLASSES = { "d" => "\\p{Nd}", "w" => "\\p{L}\\p{N}_", "s" => "\\p{Space}\\x1c-\\x1f" }.freeze
@@ -141,8 +141,8 @@ module TextFSM
                   end
         raise ArgumentError, "minimum repeat exceeds maximum" if maximum && minimum > maximum
 
-        # Ruby treats {n}? as an optional n-character block. An explicit range
-        # retains Python's required count when the lazy suffix is appended.
+        # Ruby 将 {n}? 视为可选的 n 字符块；显式范围可保留
+        # Python 在惰性后缀下仍须满足指定次数的语义。
         "{#{minimum},#{maximum}}"
       end
 
@@ -254,7 +254,7 @@ module TextFSM
 
         if @scanner.scan(/P<([^>]+)>/)
           name = @scanner[1]
-          unless name.match?(/\A[\p{L}_][\p{L}\p{N}_]*\z/) && !@group_names.key?(name)
+          unless name.match?(/\A[\p{XID_Start}_]\p{XID_Continue}*\z/) && !@group_names.key?(name)
             raise ArgumentError, "invalid or duplicate group name #{name.inspect}"
           end
 

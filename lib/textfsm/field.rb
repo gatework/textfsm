@@ -60,7 +60,7 @@ module TextFSM
     private
 
     def parse_declaration(line)
-      # The template grammar splits on literal spaces, including empty fields.
+      # 模板语法按字面空格切分，并保留空字段。
       tokens = line.split(/ /, -1)
       raise TemplateError, "Expect at least 3 tokens in Value declaration" if tokens.length < 3
 

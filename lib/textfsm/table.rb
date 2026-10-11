@@ -48,8 +48,8 @@ module TextFSM
       ([@header] + @rows).map { |row| "#{row.join(', ')}\n" }.join
     end
 
-    # Keep left rows, add new columns, and use the first matching right row.
-    # Without keys, align by position. Missing matches receive empty values.
+    # 保留左表行，添加新列，并使用首条匹配的右表行。
+    # 无键时按位置合并；缺少匹配时填入空值。
     def merge(other, keys: [])
       dup.merge!(other, keys: keys)
     end
@@ -70,10 +70,12 @@ module TextFSM
           lookup[row.values_at(*right_keys)] ||= row
         end
       end
+      # 同一右行可能匹配多个左行；新增单元格的冻结快照只需准备一次。
+      additions = {}.compare_by_identity unless keys.empty?
       rows = @rows.each_with_index.map do |row, index|
         right = keys.empty? ? other[index] : lookup[row.values_at(*left_keys)]
-        extra = right ? Data.copy(right.values_at(*right_columns), immutable: true) : Array.new(columns.size, "")
-        # Existing cells are immutable; only incoming values need an owned copy.
+        extra = additional_values(right, right_columns, additions)
+        # 已有单元格不可变，只需为新增值取得独立快照。
         (row + extra).freeze
       end
       header = (@header + Data.copy(columns, immutable: true)).freeze
@@ -92,6 +94,17 @@ module TextFSM
 
       @rows = @rows.sort_by(&).freeze
       self
+    end
+
+    private
+
+    def additional_values(row, columns, cache)
+      return Array.new(columns.size, "") unless row
+      return cache[row] if cache&.key?(row)
+
+      values = Data.copy(row.values_at(*columns), immutable: true)
+      cache[row] = values if cache
+      values
     end
   end
 end

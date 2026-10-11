@@ -116,6 +116,52 @@ class IndexTableTest < Minitest::Test
     end
   end
 
+  def test_transform_snapshots_a_reused_string_after_each_cell
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,A\nsecond,B\n")
+      calls = []
+      buffer = +""
+      index = TextFSM::IndexTable.new(
+        path,
+        transform: lambda do |key, value|
+          calls << [key, value]
+          buffer.replace(value)
+        end,
+        compile: ->(key, value) { value unless key == "Template" }
+      )
+      buffer.replace("changed")
+
+      assert_equal [%w[Template first], %w[Vendor A], %w[Template second], %w[Vendor B]], calls
+      assert_equal [{ "Template" => "first", "Vendor" => "A" }, { "Template" => "second", "Vendor" => "B" }], index.to_a
+      assert_equal "first", index.match(Vendor: "A").fetch("Template")
+      assert_equal "second", index.match(Vendor: "B").fetch("Template")
+    end
+  end
+
+  def test_transform_snapshots_nested_members_of_a_reused_buffer
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,A\nsecond,B\n")
+      buffer = { "values" => [+""] }
+      index = TextFSM::IndexTable.new(
+        path,
+        transform: lambda do |_key, value|
+          buffer.fetch("values").first.replace(value)
+          buffer
+        end,
+        compile: ->(key, value) { value.fetch("values").first unless key == "Template" }
+      )
+      buffer.fetch("values").first.replace("changed")
+      buffer.fetch("values") << "extra"
+
+      assert_equal [{ "Template" => { "values" => ["first"] }, "Vendor" => { "values" => ["A"] } },
+                    { "Template" => { "values" => ["second"] }, "Vendor" => { "values" => ["B"] } }], index.to_a
+      assert_equal ["first"], index.match(Vendor: "A").fetch("Template").fetch("values")
+      assert_raises(FrozenError) { index[0].fetch("Vendor").fetch("values").first.replace("changed") }
+    end
+  end
+
   def test_index_validation_and_wildcards
     Dir.mktmpdir do |dir|
       path = File.join(dir, "index")
@@ -131,6 +177,49 @@ class IndexTableTest < Minitest::Test
       index = TextFSM::IndexTable.new(path)
       assert_equal 1, index.size
       assert_equal index[0], index.match(Vendor: "anything")
+    end
+  end
+
+  def test_compile_rejects_non_string_results_with_path_and_column
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,A\n")
+
+      [false, 123, [], {}, Object.new].each do |invalid|
+        error = assert_raises(TextFSM::IndexError) do
+          TextFSM::IndexTable.new(path, compile: ->(key, value) { key == "Vendor" ? invalid : value })
+        end
+        assert_includes error.message, path
+        assert_includes error.message, "Vendor"
+        assert_includes error.message, "String or nil"
+      end
+    end
+  end
+
+  def test_transformed_non_string_values_require_a_compile_callback
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,A\n")
+
+      [false, 123, [], {}].each do |invalid|
+        error = assert_raises(TextFSM::IndexError) do
+          TextFSM::IndexTable.new(path, transform: ->(key, value) { key == "Vendor" ? invalid : value })
+        end
+        assert_includes error.message, path
+        assert_includes error.message, "Vendor"
+      end
+    end
+  end
+
+  def test_compile_nil_and_empty_strings_remain_wildcards
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor\nfirst,A\n")
+
+      [nil, ""].each do |wildcard|
+        index = TextFSM::IndexTable.new(path, compile: ->(key, value) { key == "Vendor" ? wildcard : value })
+        assert_equal "first", index.match(Vendor: "anything").fetch("Template")
+      end
     end
   end
 

@@ -44,7 +44,7 @@ module TextFSM
         parsed = parse_table(parser, text)
         result ? result.merge!(parsed, keys: keys) : parsed
       end
-      # Replace the result only after every template and merge succeeds.
+      # 仅在所有模板解析与合并成功后替换结果。
       input = text.dup.freeze
       keys, key_positions = prepare_keys(keys, table.header)
       @input = input

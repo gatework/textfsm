@@ -47,7 +47,7 @@ module TextFSM
       @rows[index]
     end
 
-    # Empty cells are wildcards. Attributes absent from the index are ignored.
+    # 空单元格为通配条件；索引中不存在的属性忽略。
     def match(attributes)
       attributes = attributes.filter_map do |key, value|
         name = key.to_s
@@ -70,6 +70,10 @@ module TextFSM
       @rows.map do |row|
         row.to_h do |key, value|
           value = compile.call(key, value) if compile
+          unless value.nil? || value.is_a?(String)
+            raise TemplateError, "Index pattern for column #{key.inspect} must be a String or nil, got #{value.class}"
+          end
+
           [key, value.nil? || value.empty? ? nil : (compiled[value] ||= Pattern.new(value))]
         end.freeze
       end.freeze
@@ -97,7 +101,10 @@ module TextFSM
         next unless fields.size == header.size
 
         row = header.zip(fields).to_h
-        row = row.to_h { |key, value| [key, transform.call(key, value)] } if transform
+        if transform
+          # 回调可复用可变缓冲区，每个单元格须在下一次调用前取得独立快照。
+          row = row.to_h { |key, value| [key, Data.copy(transform.call(key, value), immutable: true)] }
+        end
         rows << row
       end
       raise IndexError, "Missing index header" unless header
