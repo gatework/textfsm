@@ -71,6 +71,22 @@ class CliTableTest < Minitest::Test
     end
   end
 
+  def test_template_without_values_preserves_previous_table_and_recovers_after_repair
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "template")
+      valid = "Value Key X (.*)\n\nStart\n  ^${X} -> Record\n"
+      File.write(path, valid)
+      table = TextFSM::CliTable.new(template_dir: directory).parse("first", templates: "template")
+      before = [table.header, table.rows, table.keys, table.input]
+      File.write(path, "\nStart\n  ^.* -> Record\n")
+
+      assert_raises(TextFSM::TemplateError) { table.parse("second", templates: "template") }
+      assert_equal before, [table.header, table.rows, table.keys, table.input]
+      File.write(path, valid)
+      assert_equal [["third"]], table.parse("third", templates: "template").rows
+    end
+  end
+
   def test_no_index_and_empty_templates
     table = TextFSM::CliTable.new(template_dir: DIRECTORY)
     assert_raises(TextFSM::IndexError) do

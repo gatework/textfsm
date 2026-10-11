@@ -53,6 +53,19 @@ class CLITest < Minitest::Test
     assert_equal [0, "#{TextFSM::VERSION}\n", ""], run_cli("--version")
   end
 
+  def test_validation_and_parsing_reject_templates_without_values
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "template")
+      File.write(path, "# comment\n\nStart\n  ^.* -> Record\n")
+      [["--validate", path], [path]].each do |arguments|
+        status, output, error = run_cli(*arguments, stdin: "record\n")
+        assert_equal 2, status
+        assert_empty output
+        assert_includes error, "No Value definitions"
+      end
+    end
+  end
+
   def test_invalid_arguments_and_files
     [[], ["--unknown"], ["--format", "xml", TEMPLATE], ["missing"], [TEMPLATE, "missing"]].each do |args|
       status, output, error = run_cli(*args)

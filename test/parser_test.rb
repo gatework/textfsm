@@ -237,6 +237,21 @@ class ParserTest < Minitest::Test
     end
   end
 
+  def test_templates_require_a_value_even_after_blank_lines_and_comments
+    ["", "# comment\n", "\nStart\n", "# comment\n\nStart\n  ^.* -> Record\n"].each do |template|
+      error = assert_raises(TextFSM::TemplateError) { TextFSM::Parser.new(template) }
+      assert_includes error.message, "No Value definitions"
+    end
+  end
+
+  def test_declared_hidden_values_still_form_a_valid_template
+    template = "Value Hidden X (.*)\n\nStart\n  ^${X} -> Record\n"
+    parser = TextFSM::Parser.new(template, options: { Hidden: CustomOptions::Hidden })
+
+    assert_empty parser.header
+    assert_empty parser.parse("record")
+  end
+
   def test_custom_option_hooks
     template = "Value Uppercase,Required X (.*)\nValue Hidden Y (.*)\n\nStart\n  ^${X} -> Record\n"
     fsm = TextFSM::Parser.new(template, options: { "Uppercase" => CustomOptions::Uppercase, "Hidden" => CustomOptions::Hidden })

@@ -11,9 +11,10 @@ module TextFSM
     include Enumerable
 
     # 转换结果仅属于当前查询；通配条件或未使用的属性不会触发转换。
-    Attribute = Struct.new(:name, :value) do
+    Attribute = Struct.new(:column, :value) do
       def text
-        @text ||= value.to_s
+        # 不同属性的 to_s 可复用同一缓冲区，缓存必须持有本次转换的快照。
+        @text ||= Data.copy(value.to_s, immutable: true)
       end
     end
     private_constant :Attribute
@@ -22,6 +23,7 @@ module TextFSM
 
     def initialize(path, transform: nil, compile: nil)
       @header, @rows = Data.copy(read_table(path, transform), immutable: true)
+      @columns = @header.each_with_index.to_h.freeze
       @patterns = compile_patterns(compile)
       freeze
     rescue TemplateError => e
@@ -50,12 +52,12 @@ module TextFSM
     # 空单元格为通配条件；索引中不存在的属性忽略。
     def match(attributes)
       attributes = attributes.filter_map do |key, value|
-        name = key.to_s
-        Attribute.new(name, value) if @header.include?(name)
+        column = @columns[key.to_s]
+        Attribute.new(column, value) if column
       end
       index = @patterns.index do |patterns|
         attributes.all? do |attribute|
-          pattern = patterns[attribute.name]
+          pattern = patterns[attribute.column]
           pattern.nil? || pattern.match?(attribute.text)
         end
       end
@@ -68,13 +70,13 @@ module TextFSM
       # 仅在本次构建中共享不可变模式；回调仍逐单元格执行，缓存不跨索引保留。
       compiled = {}
       @rows.map do |row|
-        row.to_h do |key, value|
+        row.map do |key, value|
           value = compile.call(key, value) if compile
           unless value.nil? || value.is_a?(String)
             raise TemplateError, "Index pattern for column #{key.inspect} must be a String or nil, got #{value.class}"
           end
 
-          [key, value.nil? || value.empty? ? nil : (compiled[value] ||= Pattern.new(value))]
+          value.nil? || value.empty? ? nil : (compiled[value] ||= Pattern.new(value))
         end.freeze
       end.freeze
     end

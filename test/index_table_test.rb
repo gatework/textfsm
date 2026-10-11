@@ -49,6 +49,30 @@ class IndexTableTest < Minitest::Test
     end
   end
 
+  def test_attribute_conversion_snapshots_a_shared_buffer_for_the_whole_query
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Template,Vendor,Command\nfirst,A,wrong\\Z\nsecond,A,command\\Z\n")
+      index = TextFSM::IndexTable.new(path)
+      buffer = +""
+      values = %w[A command].map do |text|
+        Attribute.new(text, 0).tap do |value|
+          value.define_singleton_method(:to_s) do
+            self.conversions += 1
+            buffer.replace(self.text)
+          end
+        end
+      end
+
+      assert_equal "second", index.match(Vendor: values[0], Command: values[1])&.fetch("Template")
+      assert_equal [1, 1], values.map(&:conversions)
+      assert_equal "command", buffer
+      values[1].text = "wrong"
+      assert_equal "first", index.match(Vendor: values[0], Command: values[1])&.fetch("Template")
+      assert_equal [2, 2], values.map(&:conversions)
+    end
+  end
+
   def test_header_only_index_is_an_empty_enumerable
     Dir.mktmpdir do |directory|
       path = File.join(directory, "index")
@@ -239,6 +263,19 @@ class IndexTableTest < Minitest::Test
       assert_same match, index.match(Vendor: "VendorB")
       assert_nil index.match(Vendor: "missing")
       assert_equal index.size, index.each.size
+    end
+  end
+
+  def test_matching_uses_header_positions_and_keeps_each_attribute_condition
+    Dir.mktmpdir do |directory|
+      path = File.join(directory, "index")
+      File.write(path, "Vendor,Template,Command\nA\\Z,first,show\\Z\nB\\Z,second,list\\Z\n")
+      index = TextFSM::IndexTable.new(path, compile: ->(key, value) { value unless key == "Template" })
+
+      assert_equal "second", index.match(Command: "list", Template: Object.new, Vendor: "B").fetch("Template")
+      assert_equal "first", index.match({ "Vendor" => "A", Command: "show", Unknown: nil }).fetch("Template")
+      assert_nil index.match({ "Vendor" => "A", Vendor: "B", Command: "show" })
+      assert_nil index.match(Vendor: "A", Command: "list")
     end
   end
 

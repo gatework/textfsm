@@ -31,7 +31,7 @@ gem "textfsm", path: "/path/to/textfsm"
 ```sh
 bundle install
 bundle exec rake build
-gem install ./pkg/textfsm-0.5.0.gem
+gem install ./pkg/textfsm-0.5.1.gem
 ```
 
 源码仓库：[gatework/textfsm](https://github.com/gatework/textfsm)。
@@ -73,7 +73,7 @@ p fsm.parse_hashes(text)
 
 ## 模板语法
 
-模板先声明连续的 `Value`，用空行分隔状态。初始状态必须叫 `Start`。状态之间用空行分隔；规则以一个空格、两个空格或一个制表符缩进，随后必须是 `^`。以 `#` 开始的注释行会被忽略。
+模板至少声明一个 `Value`，连续的声明与状态之间用空行分隔。初始状态必须叫 `Start`。状态之间用空行分隔；规则以一个空格、两个空格或一个制表符缩进，随后必须是 `^`。以 `#` 开始的注释行会被忽略。
 
 ```text
 Value [选项,选项] NAME (正则表达式)
@@ -185,7 +185,7 @@ cisco_version_template, Cisco, sh[[ow]] ve[[rsion]]
 
 按文件顺序选择第一条匹配记录；匹配从属性字符串开头开始，空单元格是通配条件，index 未定义的属性会被忽略。`Command` 中 `sh[[ow]]` 支持 `sh`、`sho`、`show`。index 遵循上游简单逗号分隔格式，不处理带引号的 CSV 字段。
 
-每次查询按需将参与匹配的属性值转换为字符串，并在本次扫描中复用；未知属性和仅遇到通配条件的值不会触发转换。Symbol 与同名 String 属性分别参与匹配，传入的属性集合不会被修改。
+每次查询按需将参与匹配的属性值转换为字符串，并在本次扫描中复用冻结快照；不同属性的 `to_s` 可以复用可变缓冲区，已转换的值不会被后续转换覆盖。未知属性和仅遇到通配条件的值不会触发转换。Symbol 与同名 String 属性分别参与匹配，传入的属性集合不会被修改。
 
 加载索引时，相同模式在当前索引内只编译一次；`IndexTable` 的 `transform:` 和 `compile:` 回调仍按文件顺序逐单元格执行，回调返回值不会被原地修改。
 
@@ -204,6 +204,8 @@ table.parse(output, templates: "first.textfsm:second.textfsm")
 表格和自定义选项的值支持字符串、`Integer`、`Float`、`Rational`、`Complex`、Symbol、`nil`、布尔值，以及由它们构成的无环 Array、Hash 和 Struct。Struct 保留类型并递归复制成员；其他对象会抛出 `TypeError`，避免浅复制破坏快照隔离。内部可以共享已深度冻结的值，导出可修改结果时仍会复制。
 
 记录格式以字符串内容、数值和集合／Struct 成员为准；不要在字符串或 Struct 的额外实例变量中附加可变业务状态，这些附加状态不属于深拷贝契约。
+
+自定义选项产生的 `false` 是有效记录值，能满足 `Required`，也能参与 `Fillup`／`Filldown`；后续 `Fillup` 遇到已记录的 `false` 时停止。只有 `nil` 或响应 `empty?` 且返回真值的对象被视为空值，例如空字符串、Array 和 Hash。
 
 `CliTable#keys` 返回模板声明的键，使用 `table.keys = ["ID"]` 显式设置，或 `table.keys += ["NAME"]` 增补。`key_for(row)` 返回键值数组，没有键时返回 `[]`。排序遵循 Ruby 自身的比较规则：
 
@@ -260,6 +262,7 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 - 内部动作使用 Symbol，省略目标状态使用 `nil`；模板文本继续使用标准的 `Next`、`Record`、`Clearall` 等语法。
 - 正则编译使用 `StringScanner`，编译器的游标和分组栈不保留在最终 `Pattern` 对象中。模式始终从输入开头匹配。
 - 多对一键合并按右行缓存新增列的冻结快照，缓存仅保留在本次合并中。可用 `ruby script/benchmark_merge.rb` 测量这一场景的耗时和对象分配；`ROWS`、`ITEMS` 分别控制左行数和嵌套成员数。此基准不代表所有模板或合并场景。
+- 索引将列名预计算为位置，内部编译模式按表头顺序保存在数组中，查询保持属性顺序与短路规则。可用 `ruby script/benchmark_index.rb` 测量较晚命中的加载、扫描耗时和对象分配；`ROWS`、`QUERIES` 控制索引行数与查询次数，此基准不代表所有查询分布。
 - `bundle exec rake` 执行 Minitest 和 RuboCop；`rake test`、`rake lint` 可分别运行。代码规则见 `.rubocop.yml`。
 - `bundle exec rake verify` 进一步构建 gem，从 `bundle install` 准备的本地缓存离线安装运行时依赖和候选包；安装环境仅使用临时目录的 gem 与 Ruby 自带的默认 gem。逐文件核对源码内容，并验证独立加载与 CLI 输出、标准输入和退出码，避免开发依赖掩盖缺失的运行时依赖。生成的包位于 `pkg/`，不会发布到 RubyGems。
 
@@ -269,7 +272,7 @@ parser = TextFSM::Parser.new(template, options: { "Uppercase" => Uppercase })
 工作流验证并上传同次 CI 的 gem，再核对 RubyGems 下载和 GitHub Release 的 SHA256。
 流程、账号绑定及失败恢复见 [发布说明](docs/RELEASING.md)。
 
-本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.5.0.gem`；
+本地预检可执行 `bundle exec ruby script/release.rb --dry-run --artifact pkg/textfsm-0.5.1.gem`；
 已有产物路径不会重新构建。更新版本及 CHANGELOG、提交并确认远端 CI 后推送对应版本标签。
 
 ## 兼容范围与验证

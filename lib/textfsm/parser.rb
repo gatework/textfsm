@@ -90,13 +90,13 @@ module TextFSM
       snapshot = nil
       (@rows.length - 1).downto(0) do |index|
         row = @rows[index]
-        value = row[column]
-        break if value && !(value.respond_to?(:empty?) && value.empty?)
+        break unless Data.empty?(row[column])
 
         # 记录不可变，既有快照可安全共享；回填通过替换整行完成。
         replacement = row.dup
         # Fillup 接收非空值，同一次回填共享冻结快照，导出时仍各自复制。
-        replacement[column] = snapshot ||= Data.copy(field.value, immutable: true)
+        snapshot = Data.copy(field.value, immutable: true) if snapshot.nil?
+        replacement[column] = snapshot
         @rows[index] = replacement.freeze
       end
     end
@@ -197,6 +197,7 @@ module TextFSM
     end
 
     def validate_states
+      raise TemplateError, "No Value definitions found" if @fields.empty?
       raise TemplateError, "Missing state 'Start'." unless @states.key?("Start")
 
       %w[End EOF].each do |state|

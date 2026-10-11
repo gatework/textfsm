@@ -5,6 +5,7 @@
 require_relative "errors"
 require_relative "options"
 require_relative "pattern"
+require_relative "data"
 
 module TextFSM
   class Field
@@ -31,7 +32,7 @@ module TextFSM
     end
 
     def empty?
-      !@value || (@value.respond_to?(:empty?) && @value.empty?)
+      Data.empty?(@value)
     end
 
     def assign(value)

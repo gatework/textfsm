@@ -4,6 +4,10 @@ module TextFSM
   # 记录可包含嵌套列表与命名捕获；所有权边界复制这些值，
   # 需要只读结果时返回深度冻结的快照。
   module Data
+    def self.empty?(value)
+      value.nil? || (value.respond_to?(:empty?) && value.empty?)
+    end
+
     def self.copy(value, immutable: false)
       # 只有整个值树都不可变时才共享，冻结外层容器并不代表成员已冻结。
       return value if immutable && immutable?(value)
